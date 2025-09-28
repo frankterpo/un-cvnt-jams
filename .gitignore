@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# API Keys and credentials (keep requirements.txt and README.md)
+*.json
+!requirements.txt
+!README.md
+
+# Generated content (keep directory structure)
+pipeline_output/downloads/
+pipeline_output/transcripts/
+pipeline_output/shotstack/
+pipeline_output/jobs/
+!pipeline_output/.gitkeep
+
+# Test files
+scooby_shorts_test.json
+scooby_shorts_advanced_test.json
+test_*.json
