@@ -1,0 +1,24 @@
+# Core dependencies
+pydantic>=2.0
+loguru
+
+# Selenium for browser automation (YouTube, Instagram)
+selenium
+webdriver-manager
+
+# TikTok uploader
+tiktok-uploader
+
+# Env loading
+python-dotenv
+
+# Google Drive client (optional, for GDrive source mode)
+google-api-python-client
+google-auth
+
+# HTTP client for Ollama planner
+requests
+
+# Existing dependencies (if any)
+# Add other project dependencies here as needed
+

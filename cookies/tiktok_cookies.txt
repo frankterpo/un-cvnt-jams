@@ -1,0 +1,10 @@
+# Netscape HTTP Cookie File
+.tiktok.com	TRUE	/	TRUE	1766359229	msToken	k2w0dqzIE-_Dref8qXKsJ5FhH7_w9ahbMfbi-yOrL05lc5YjwMTmuUk1Pdai9FdfwTMcW-puGXk0PeCc6u_4qTrBGRfKsHsUpoLeIcu6rHwBlRhiQS603GS5aOLs0A==
+.tiktok.com	TRUE	/	TRUE	1770679229	passport_csrf_token	27d7966d5cc129062ced7442ed13ec4f
+.tiktok.com	TRUE	/	TRUE	1797031222	ttwid	1%7C2tiOMTdZtX8Vaefgrax9FjRs993CDQOwwpKQdX2Q5TM%7C1765495222%7C9b01b2e5dc3b039fc729a798af6f9c9083cca5f50795b69fd41ac619a68647da
+.tiktok.com	TRUE	/	TRUE	1799191224	cookie-consent	{%22optional%22:true%2C%22ga%22:true%2C%22af%22:true%2C%22fbp%22:true%2C%22lip%22:true%2C%22bing%22:true%2C%22ttads%22:true%2C%22reddit%22:true%2C%22hubspot%22:true%2C%22version%22:%22v10%22}
+www.tiktok.com	FALSE	/	FALSE	1773271236	msToken	mzO_uN1MMQQmXoarNMpwL0J6mFId18zOaDK9pao0I8eU4fX_Fcs25Ay5zhKegrjBjfBvSyu8672aKlHORtcRiO9ISXasMIx9_xh08sHkk-xaT8ukL1mYElgVnO0Z
+.www.tiktok.com	TRUE	/	TRUE	1791415222	tiktok_webapp_theme	dark
+.tiktok.com	TRUE	/	TRUE	1770679229	passport_csrf_token_default	27d7966d5cc129062ced7442ed13ec4f
+.www.tiktok.com	TRUE	/	TRUE	1791415222	tiktok_webapp_theme_source	auto
+.tiktok.com	TRUE	/	TRUE	0	tt_csrf_token	rF2o30Zr-mXG-T0gHcyiLYtL6p8PQNDGmBlg

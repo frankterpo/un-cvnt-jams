@@ -146,6 +146,66 @@ python google_drive_uploader.py
 python shotstack_client.py
 ```
 
+## 📣 Social Uploader (YouTube / TikTok / Instagram)
+
+This repo also contains an **agentic social uploader** that can publish videos to YouTube/TikTok/Instagram with:
+- **Idempotency** via `UploadState` (reruns skip successful uploads per platform+video id)
+- **Debug HTML dumps** for selector/auth issues
+- **Headful/Headless** toggles via env + CLI
+
+### Required environment variables (local `.env` recommended)
+
+- **TikTok**
+  - `TIKTOK_COOKIES_PATH=/abs/path/to/tiktok_cookies.txt`
+  - `TIKTOK_HEADLESS=false`
+- **Instagram**
+  - `INSTAGRAM_PROFILE_DIR=/abs/path/to/chrome-profiles/instagram-main`
+  - `INSTAGRAM_HEADLESS=false`
+- **YouTube**
+  - `YOUTUBE_PROFILE_DIR=/abs/path/to/chrome-profiles/youtube-main`
+  - `YOUTUBE_HEADLESS=false`
+
+### Debug dumps
+
+- **YouTube**: `debug_yt_*` / `debug_*` (see `src/tools/youtube_client.py`)
+- **Instagram**: `debug_instagram_*`
+- **TikTok**: `debug_tiktok_*`
+
+### Quick manual QA commands (headful)
+
+```bash
+cd /Users/franciscoterpolilli/Projects/un-cvnt-jams
+source venv/bin/activate
+```
+
+YouTube:
+```bash
+PYTHONPATH=src python scripts/test_youtube_upload.py --help
+```
+
+TikTok:
+```bash
+PYTHONPATH=src python scripts/test_tiktok_upload.py --video /abs/path/to/video.mp4 --caption "UCJ TikTok test"
+```
+
+Instagram (prime a profile once, then upload):
+```bash
+PYTHONPATH=src python scripts/instagram_login_profile.py --profile-dir /abs/path/to/chrome-profiles/instagram-main
+PYTHONPATH=src python scripts/test_instagram_upload.py --video /abs/path/to/video.mp4 --caption "UCJ IG test" --profile-dir /abs/path/to/chrome-profiles/instagram-main --post-type feed
+```
+
+### End-to-end: GDrive batch + planner
+
+Batch runner:
+```bash
+PYTHONPATH=src GDRIVE_FOLDER_ID=... GDRIVE_SA_JSON=/abs/path/to/secrets/service_account.json python scripts/run_from_gdrive.py
+```
+
+Planner:
+```bash
+PYTHONPATH=src GDRIVE_FOLDER_ID=... GDRIVE_SA_JSON=/abs/path/to/secrets/service_account.json OLLAMA_MODEL=llama3.1 python scripts/ollama_agent.py
+```
+
 ## 📁 Output Structure
 
 ```
