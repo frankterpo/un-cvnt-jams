@@ -23,11 +23,15 @@ CREATE_BUTTON = (
 FILE_INPUT = (By.CSS_SELECTOR, "input[type='file']")
 
 # --- Post flow navigation ---
-# "Next" button across post steps (crop/filter/caption).
+# "Next" button across post steps (crop/filter/caption) - includes divs and spans.
 NEXT_BUTTON = (
     By.XPATH,
     "//button[normalize-space()='Next'] | "
-    "//div[normalize-space()='Next']/parent::button",
+    "//div[normalize-space()='Next']/parent::button | "
+    "//div[normalize-space()='Next' and @role='button'] | "
+    "//span[normalize-space()='Next'] | "
+    "//div[contains(text(), 'Next') and contains(@class, 'x1qjc9v5')] | "
+    "//*[text()='Next' and (contains(@class, 'x1qjc9v5') or contains(@class, 'x1lliihq'))]",
 )
 
 # --- Caption and metadata ---
@@ -39,11 +43,24 @@ CAPTION_AREA = (
 )
 
 # --- Share / confirmation ---
-# "Share" button in final step.
+# "Share" button in final step (various text variations - includes divs for Instagram's complex structure).
 SHARE_BUTTON = (
     By.XPATH,
     "//button[normalize-space()='Share'] | "
-    "//div[normalize-space()='Share']/parent::button",
+    "//button[normalize-space()='Post'] | "
+    "//div[normalize-space()='Share']/parent::button | "
+    "//div[normalize-space()='Post']/parent::button | "
+    "//button[contains(., 'Share')] | "
+    "//button[contains(., 'Post')] | "
+    # Instagram uses clickable divs with SVG icons and text spans
+    "//div[.//svg[@aria-label='Post']] | "
+    "//div[contains(., 'Post') and @role='button'] | "
+    "//div[.//span[contains(text(), 'Post')]] | "
+    "//div[contains(@class, 'x1qjc9v5') and .//span[contains(text(), 'Post')]] | "
+    "//div[contains(@class, 'x1diwwjn') and .//span[contains(text(), 'Post')]] | "
+    # Specific selector for the Post div with exact class combination
+    "//div[contains(@class, 'x1qjc9v5') and text()='Post'] | "
+    "//div[contains(@class, 'html-div') and contains(@class, 'x1qjc9v5') and text()='Post']",
 )
 
 # Confirmation heuristic for successful post.

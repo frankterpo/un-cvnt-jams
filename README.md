@@ -1,335 +1,268 @@
-# Scooby Doo Video Pipeline 🎭
+# Social Media Automation Agent
 
-A complete automated pipeline that discovers Scooby Doo YouTube shorts, downloads media, transcribes audio, uploads to Google Drive, and creates Shotstack video timelines.
+A robust, production-ready system for automated social media posting across TikTok, YouTube, and Instagram.
 
-## 🚀 Pipeline Overview
+## 🚀 Features
 
-1. **YouTube Search** → Find Daphne Scooby Doo quote YouTube shorts only
-2. **Media Download** → Download MP4 video + MP3 audio using yt-dlp
-3. **Speech Transcription** → Transcribe audio using Google Speech-to-Text (Chirp model)
-4. **Google Drive Upload** → Upload assets to organized folders
-5. **Shotstack Timeline** → Create video compilation timeline with subtitles
+- **Multi-platform support**: TikTok, YouTube, and Instagram
+- **Smart automation**: Dynamic element detection, no brittle selectors
+- **Idempotent uploads**: Prevents duplicate posts
+- **AI-powered captions**: Ollama integration for intelligent content generation
+- **Google Drive integration**: Automated video sourcing
+- **Headless & headful modes**: Flexible deployment options
 
-## 📋 Features
+## 📁 Project Structure
 
-- ✅ **YouTube Data API v3** integration for short discovery
-- ✅ **Premium channel prioritization** - @BoomerangUK, @PixaWaveStudio, @hbomaxfamily, @GenerationWB
-- ✅ **8-second maximum duration** - Ultra-short clips only
-- ✅ **Channel-specific search** - Uses `channelId` parameter for targeted results
-- ✅ **Strict YouTube shorts only** - URLs start with https://www.youtube.com/shorts/
-- ✅ **Daphne Scooby Doo quotes search** - Exact query "daphne scooby doo quotes"
-- ✅ **Creative Commons filtering** for safe content usage
-- ✅ **Advanced deduplication** - zero duplicate videos across jobs
-- ✅ **Content validation** - Ensures all videos contain Daphne/Scooby keywords
-- ✅ **yt-dlp integration** for reliable media downloads
-- ✅ **Google Speech-to-Text** with Chirp model for transcription
-- ✅ **Google Drive API** for organized asset storage
-- ✅ **Shotstack MCP** integration for video rendering
-- ✅ **Job tracking system** with unique IDs
-- ✅ **Mock mode** for testing without API keys
+```
+├── src/agent/                    # Core agent logic
+│   ├── config.py                # Configuration management
+│   ├── workflow.py              # Main upload orchestration
+│   ├── state.py                 # Upload state tracking
+│   ├── captions.py              # Caption generation
+│   ├── captions_ollama.py       # AI caption generation
+│   ├── source_gdrive.py         # Google Drive integration
+│   └── __main__.py              # CLI entry point
+├── src/tools/                   # Platform-specific tools
+│   ├── tiktok_*.py              # TikTok upload client
+│   ├── youtube_*.py             # YouTube upload client
+│   ├── instagram_*.py           # Instagram upload client
+│   └── ai_locator.py            # AI element locator (optional)
+├── scripts/                     # Testing & utility scripts
+│   ├── test_*.py                # Individual platform tests
+│   ├── *_login_*.py             # Profile/cookie setup
+│   ├── run_from_gdrive.py       # Direct GDrive workflow
+│   ├── ollama_agent.py          # Full AI pipeline
+│   └── sanity_check.py          # Configuration validation
+├── accounts.json                # Account credentials
+├── cookies/tiktok_cookies.txt   # TikTok authentication
+├── blissful-fiber-*.json        # Google Drive service account
+├── sample_videos/               # Test video files
+└── chrome-profiles/             # Browser profiles (auto-created)
+```
 
-### 🔄 Deduplication System
+## ⚙️ Setup
 
-The pipeline uses a sophisticated deduplication system to ensure no duplicate videos are processed:
+### 1. Environment Variables
 
-- **Search-level deduplication**: Removes duplicates from YouTube API results using video ID and title similarity
-- **Job-level deduplication**: Tracks videos processed in recent jobs (last 7 days) and skips them
-- **Cross-job awareness**: Each new pipeline run automatically skips videos processed in previous runs
-
-This ensures fresh content for each pipeline execution while maintaining efficiency.
-
-### 🔍 Advanced Search Methodology
-
-The pipeline uses a sophisticated multi-stage search approach to find the best Daphne Scooby Doo shorts:
-
-1. **Channel Discovery**: Searches for YouTube channels related to Scooby Doo content
-2. **Shorts Playlist Access**: Converts channel IDs to shorts playlist IDs using `UUSH + channel_suffix`
-3. **Playlist Search**: Searches within each channel's shorts playlist for relevant content
-4. **Fallback Search**: Supplements with traditional search for comprehensive coverage
-5. **Content Validation**: Applies strict filtering for Daphne quotes and YouTube Shorts format
-
-This approach provides higher quality, more relevant results than simple keyword searches.
-
-### 🎯 Ultra-Strict Content Requirements
-
-The pipeline enforces extremely strict validation for premium Daphne Scooby Doo content:
-
-- **Search Query**: Exactly "daphne scooby doo quotes"
-- **Duration Limit**: Maximum 8 seconds (ultra-short clips only)
-- **Video Type**: YouTube Shorts only (`https://www.youtube.com/shorts/` URLs)
-- **Premium Channels**: Prioritizes @BoomerangUK, @PixaWaveStudio, @hbomaxfamily, @GenerationWB
-- **Content Validation**: Must contain Daphne/Scooby related keywords
-- **Deduplication**: Zero duplicate video IDs or similar titles
-- **Creative Commons**: Only licensed content for safe reuse
-
-## 🛠️ Installation
+Create a `.env` file in the project root:
 
 ```bash
-# Clone and setup
-cd /path/to/project
-python3 -m venv venv
-source venv/bin/activate
+# TikTok Configuration
+TIKTOK_COOKIES_PATH=/path/to/tiktok_cookies.txt
+TIKTOK_HEADLESS=false
+
+# YouTube Configuration
+YOUTUBE_PROFILE_DIR=/path/to/chrome-profiles/youtube-main
+YOUTUBE_HEADLESS=false
+
+# Instagram Configuration
+INSTAGRAM_PROFILE_DIR=/path/to/chrome-profiles/instagram-main
+INSTAGRAM_HEADLESS=false
+
+# Google Drive (optional)
+GDRIVE_SA_JSON=/path/to/service-account.json
+GDRIVE_FOLDER_ID=your_folder_id
+
+# Ollama (optional)
+OLLAMA_URL=http://localhost:11434/api/chat
+OLLAMA_MODEL=llama3.1
+```
+
+### 2. Authentication Setup
+
+#### TikTok
+```bash
+# Capture cookies
+python scripts/tiktok_login_cookies.py --cookies-path cookies/tiktok_cookies.txt
+```
+
+#### YouTube
+```bash
+# Create logged-in profile
+python scripts/youtube_login_profile.py --profile-dir chrome-profiles/youtube-main
+```
+
+#### Instagram
+```bash
+# Create logged-in profile
+python scripts/instagram_login_profile.py --profile-dir chrome-profiles/instagram-main
+```
+
+### 3. Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-## ⚙️ Configuration
-
-### API Keys Setup
-
-1. **Google Cloud Console**: https://console.cloud.google.com/
-2. **YouTube Data API v3**: Enable and get API key
-3. **Speech-to-Text API**: Enable for transcription
-4. **Google Drive API**: Enable for uploads
-
-### Environment Variables
-
-```bash
-# For production use
-export YOUTUBE_API_KEY="your_youtube_api_key"
-export GOOGLE_STUDIO_API_KEY="your_speech_api_key"
-```
-
-### Google Drive Folders
-
-The pipeline uploads to these pre-shared Google Drive folders:
-
-- **Audio**: `1DsZvcbJtEObhP8NkLrkrHc5ICSjuRWtf`
-- **Video**: `1sUGWyD_bnhfPBAAo24jlQ-lO5mBm-faN`
-- **Transcription**: `1p26m9wBlAWBJidQMVbdVhJqvu3BnmEkt`
-- **Music**: `1ofweNntzmckkjvWW-BQ_HKTvOxN0AEU-`
-
 ## 🎯 Usage
 
-### Run Complete Pipeline
+### Individual Platform Testing
 
 ```bash
-# Run with mock services (default, processes 3 videos)
-python scooby_pipeline.py
+# Test TikTok
+PYTHONPATH=src python scripts/test_tiktok_upload.py --video sample_videos/test_tiktok.mp4 --caption "Test upload"
 
-# Specify number of videos (1-50)
-python scooby_pipeline.py --max-videos 10
-python scooby_pipeline.py -n 5
+# Test YouTube
+PYTHONPATH=src python scripts/test_youtube_upload.py --video sample_videos/test_youtube.mp4 --title "Test Video" --description "Test description"
 
-# Run with real APIs (requires API keys)
-python scooby_pipeline.py --real --max-videos 5
-
-# Check pipeline help
-python scooby_pipeline.py --help
+# Test Instagram
+PYTHONPATH=src python scripts/test_instagram_upload.py --video sample_videos/test_tiktok.mp4 --caption "Test post"
 ```
 
-### Job Management
+### Full Pipeline (GDrive + AI)
 
 ```bash
-# List all jobs
-python scooby_pipeline.py --list-jobs
-
-# Check specific job status
-python scooby_pipeline.py --job-id scooby_20250928_100103_b393
+# Run complete automation pipeline
+PYTHONPATH=src python scripts/ollama_agent.py
 ```
 
-### Individual Components
+### Direct GDrive Workflow
 
 ```bash
-# Test YouTube search only
-python youtube_search.py
-
-# Test media downloads
-python media_downloader.py
-
-# Test transcription
-python speech_transcriber.py
-
-# Test Google Drive upload
-python google_drive_uploader.py
-
-# Test Shotstack timeline creation
-python shotstack_client.py
+# Process videos from Google Drive
+PYTHONPATH=src python scripts/run_from_gdrive.py
 ```
 
-## 📣 Social Uploader (YouTube / TikTok / Instagram)
+## 🔧 Configuration Details
 
-This repo also contains an **agentic social uploader** that can publish videos to YouTube/TikTok/Instagram with:
-- **Idempotency** via `UploadState` (reruns skip successful uploads per platform+video id)
-- **Debug HTML dumps** for selector/auth issues
-- **Headful/Headless** toggles via env + CLI
+### Account Credentials (`accounts.json`)
 
-### Required environment variables (local `.env` recommended)
-
-- **TikTok**
-  - `TIKTOK_COOKIES_PATH=/abs/path/to/tiktok_cookies.txt`
-  - `TIKTOK_HEADLESS=false`
-- **Instagram**
-  - `INSTAGRAM_PROFILE_DIR=/abs/path/to/chrome-profiles/instagram-main`
-  - `INSTAGRAM_HEADLESS=false`
-- **YouTube**
-  - `YOUTUBE_PROFILE_DIR=/abs/path/to/chrome-profiles/youtube-main`
-  - `YOUTUBE_HEADLESS=false`
-
-### Debug dumps
-
-- **YouTube**: `debug_yt_*` / `debug_*` (see `src/tools/youtube_client.py`)
-- **Instagram**: `debug_instagram_*`
-- **TikTok**: `debug_tiktok_*`
-
-### Quick manual QA commands (headful)
-
-```bash
-cd /Users/franciscoterpolilli/Projects/un-cvnt-jams
-source venv/bin/activate
+```json
+{
+  "instagram": {
+    "accounts": [
+      {
+        "username": "your_username",
+        "password": "your_password"
+      }
+    ]
+  },
+  "tiktok": {
+    "accounts": [
+      {
+        "username": "your_username",
+        "password": "your_password"
+      }
+    ]
+  }
+}
 ```
 
-YouTube:
-```bash
-PYTHONPATH=src python scripts/test_youtube_upload.py --help
+### Upload State Tracking
+
+The system maintains `pipeline_output/upload_state.json` to track successful uploads and prevent duplicates:
+
+```json
+{
+  "file_id_platform": "timestamp",
+  "drive_file_123_tiktok": "2025-12-12T00:00:00",
+  "drive_file_123_youtube": "2025-12-12T00:01:00"
+}
 ```
 
-TikTok:
-```bash
-PYTHONPATH=src python scripts/test_tiktok_upload.py --video /abs/path/to/video.mp4 --caption "UCJ TikTok test"
-```
+## 🚦 Platform-Specific Notes
 
-Instagram (prime a profile once, then upload):
-```bash
-PYTHONPATH=src python scripts/instagram_login_profile.py --profile-dir /abs/path/to/chrome-profiles/instagram-main
-PYTHONPATH=src python scripts/test_instagram_upload.py --video /abs/path/to/video.mp4 --caption "UCJ IG test" --profile-dir /abs/path/to/chrome-profiles/instagram-main --post-type feed
-```
+### TikTok
+- Uses Netscape-format cookies for authentication
+- Requires manual cookie capture via browser
+- Headless mode supported
+- ~45 seconds per upload
 
-### End-to-end: GDrive batch + planner
+### YouTube
+- Uses Chrome profile for authentication
+- Supports scheduled publishing
+- Multi-step upload wizard (Details → Checks → Visibility)
+- ~55 seconds per upload
 
-Batch runner:
-```bash
-PYTHONPATH=src GDRIVE_FOLDER_ID=... GDRIVE_SA_JSON=/abs/path/to/secrets/service_account.json python scripts/run_from_gdrive.py
-```
+### Instagram
+- Uses Chrome profile for authentication
+- Handles cookie banners and login modals automatically
+- Smart modal navigation with dynamic button detection
+- ~55 seconds per upload
 
-Planner:
-```bash
-PYTHONPATH=src GDRIVE_FOLDER_ID=... GDRIVE_SA_JSON=/abs/path/to/secrets/service_account.json OLLAMA_MODEL=llama3.1 python scripts/ollama_agent.py
-```
+## 🔍 Debugging
 
-## 📁 Output Structure
-
-```
-pipeline_output/
-├── downloads/           # Downloaded MP4/MP3 files
-├── transcripts/         # JSON transcription files
-├── shotstack/          # Timeline and render files
-├── jobs/               # Job tracking files
-└── logs/               # Pipeline logs
-```
-
-## 🎬 Pipeline Steps
-
-### 1. YouTube Search
-- Searches for Scooby Doo shorts using hashtags:
-  - `#ScoobyDoo #SarahMichelleGellar #DaphneBlake #buffythevampireslayer`
-- Filters for Creative Commons licensed content
-- Returns top videos by relevance
-
-### 2. Media Download
-- Downloads MP4 video (720p max, ~15-60 seconds)
-- Downloads MP3 audio (128kbps)
-- Uses yt-dlp for reliable downloads
-
-### 3. Speech Transcription
-- Uses Google Speech-to-Text Chirp model
-- Creates word-level timestamps
-- Generates subtitle-compatible output
-
-### 4. Google Drive Upload
-- Uploads videos to Video folder
-- Uploads audio to Audio folder
-- Uploads transcripts to Transcription folder
-- Generates shareable links
-
-### 5. Shotstack Timeline Creation
-- Creates multi-track video timeline
-- Adds video clips with text overlays
-- Includes audio tracks
-- Generates subtitle tracks from transcripts
-
-## 🔧 Configuration Files
-
-- `config.py` - API keys, folder IDs, settings
-- `requirements.txt` - Python dependencies
-- Service account JSON for Google APIs
-
-## 🎭 Mock Mode
-
-For testing without API keys, the pipeline includes mock implementations:
-
-```bash
-# Use mock mode (default)
-python scooby_pipeline.py
-
-# The following components have mock fallbacks:
-# - Speech-to-Text → Mock transcription
-# - Google Drive → Mock upload URLs
-# - Shotstack → Mock render submission
-```
-
-## 📊 Job Tracking
-
-Each pipeline run creates a unique job ID and tracks:
-
-- Job status and progress
-- Asset counts and locations
-- Step-by-step execution logs
-- Error handling and recovery
-
-## 🚨 Important Notes
-
-### API Limitations
-- **YouTube API**: 10,000 units/day free quota
-- **Speech-to-Text**: Pay-per-use pricing
-- **Google Drive**: Service account storage limits
-
-### Content Usage
-- Only processes Creative Commons licensed content
-- Always verify license terms before public use
-- Include attribution for creators
-
-### Production Setup
-1. Enable required Google Cloud APIs
-2. Set up service account with proper permissions
-3. Configure Google Drive folder sharing
-4. Set up Shotstack account and API access
-
-## 🐛 Troubleshooting
+### Debug Files
+When uploads fail, debug HTML dumps are created:
+- `debug_tiktok_*.html`
+- `debug_youtube_*.html`
+- `debug_instagram_*.html`
 
 ### Common Issues
 
-**"API key not valid"**
-- Check API key is correct and YouTube Data API is enabled
+1. **"Session not created"**: Delete and recreate Chrome profiles
+2. **"Element not found"**: Check if platform UI changed, debug dumps will help
+3. **"Already uploaded"**: Check `upload_state.json` for duplicate prevention
 
-**"Service account storage quota"**
-- Service accounts have limited storage; use shared drives
+### Performance Tuning
 
-**"Transcription failed"**
-- Enable Speech-to-Text API in Google Cloud Console
+- Set `*_HEADLESS=true` for server deployment
+- Adjust timeouts in client code for slower networks
+- Use `sanity_check.py` to validate configuration
 
-**"Download failed"**
-- Check yt-dlp is installed: `yt-dlp --version`
+## 📊 Architecture
 
-## 📈 Performance
+### Smart Element Detection
+- Dynamic XPath selectors with fallbacks
+- JavaScript injection for complex cases
+- Role-based element targeting
+- Text content matching
 
-- **YouTube Search**: ~2-5 seconds
-- **Media Download**: ~10-30 seconds per video
-- **Transcription**: ~5-15 seconds per audio file
-- **Drive Upload**: ~5-10 seconds per file
-- **Timeline Creation**: ~1-2 seconds
+### Idempotency
+- File-based state tracking
+- Platform-specific upload records
+- Automatic duplicate prevention
 
-## 🤝 Contributing
+### Error Handling
+- Comprehensive exception catching
+- Debug dumps on failures
+- Graceful degradation with fallbacks
 
-1. Fork the repository
-2. Create feature branch
-3. Add tests for new functionality
-4. Submit pull request
+## 🤖 AI Integration
+
+### Ollama Caption Generation
+The system can generate platform-specific captions using local AI:
+
+```python
+from agent.captions_ollama import generate_captions_with_ollama
+
+captions = generate_captions_with_ollama(
+    title="My Video Title",
+    context="Additional context"
+)
+```
+
+### Optional AI Element Locator
+For advanced cases, an AI-powered element locator is available:
+
+```python
+from tools.ai_locator import suggest_selector
+
+selector = suggest_selector("youtube_upload_button", html_content)
+```
+
+## 🚀 Production Deployment
+
+1. Set all `*_HEADLESS=true` in `.env`
+2. Use service accounts for Google Drive
+3. Run on a server with stable internet
+4. Monitor logs for upload status
+5. Set up cron jobs for automated posting
+
+## 📝 Development
+
+### Adding New Platforms
+1. Create platform client in `src/tools/`
+2. Add selectors file for DOM elements
+3. Implement browser setup and upload logic
+4. Add to `workflow.py` dispatch
+5. Create test script in `scripts/`
+
+### Extending AI Features
+- Modify `captions_ollama.py` for custom prompts
+- Enhance `ai_locator.py` for better element detection
+- Add new LLM integrations
 
 ## 📄 License
 
-This project processes Creative Commons licensed content only.
-Ensure compliance with YouTube Terms of Service and content creator licenses.
-
----
-
-**Built with ❤️ for Scooby Doo fans everywhere!** 🐕👻
+This project is for educational and personal use. Please respect platform terms of service and rate limits.

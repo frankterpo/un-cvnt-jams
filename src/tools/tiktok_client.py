@@ -13,6 +13,7 @@ from typing import Iterable
 
 from loguru import logger
 from tiktok_uploader import config as tt_config
+from tiktok_uploader import upload as tt_upload
 from tiktok_uploader.types import ProxyDict
 from tiktok_uploader.upload import upload_videos
 
@@ -35,6 +36,77 @@ def _debug_dump(driver, name: str) -> None:
         logger.info("[TIKTOK] Dumped TikTok page HTML to {}", p)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[TIKTOK] Failed to write debug dump {}: {}", p, exc)
+
+
+def _dismiss_cookie_banner(driver) -> None:
+    """
+    TikTok shows a bottom cookie banner (`div.tiktok-cookie-banner`) and a toast
+    (`.cookie-banner-toast`). The default tiktok-uploader selector targets a
+    custom tag and misses this variant, so we proactively remove both.
+    """
+    try:
+        driver.execute_script(
+            """
+            document.querySelectorAll('div.tiktok-cookie-banner, .cookie-banner-toast')
+                    .forEach(el => el.remove());
+            """
+        )
+    except Exception:
+        pass
+
+
+def _dismiss_tutorial_overlay(driver) -> None:
+    """
+    Remove TikTok's tutorial/joyride overlay that blocks clicks on inputs.
+    Observed selector: .react-joyride__overlay (role=presentation, high z-index).
+    """
+    try:
+        driver.execute_script(
+            """
+            document.querySelectorAll('.react-joyride__overlay, [data-test-id="overlay"]')
+                    .forEach(el => el.remove());
+            """
+        )
+    except Exception:
+        pass
+
+
+def _monkeypatch_uploader_cookie_banner() -> None:
+    """
+    tiktok-uploader's _remove_cookies_window expects a custom tag; on current
+    pages it raises NoSuchElement. Override it to a no-op and rely on our
+    _dismiss_cookie_banner instead.
+    """
+    try:
+        tt_upload._remove_cookies_window = lambda driver: None  # type: ignore
+    except Exception:
+        pass
+
+
+_orig_set_description = getattr(tt_upload, "_set_description", None)
+_orig_set_interactivity = getattr(tt_upload, "_set_interactivity", None)
+
+
+def _patch_tutorial_overlay() -> None:
+    """
+    Wrap tiktok-uploader's _set_description and _set_interactivity to dismiss
+    the joyride overlay before interacting with fields.
+    """
+    if _orig_set_description:
+
+        def _wrapped_set_description(driver, description: str, *args, **kwargs):
+            _dismiss_tutorial_overlay(driver)
+            return _orig_set_description(driver, description, *args, **kwargs)
+
+        tt_upload._set_description = _wrapped_set_description  # type: ignore
+
+    if _orig_set_interactivity:
+
+        def _wrapped_set_interactivity(driver, *args, **kwargs):
+            _dismiss_tutorial_overlay(driver)
+            return _orig_set_interactivity(driver, *args, **kwargs)
+
+        tt_upload._set_interactivity = _wrapped_set_interactivity  # type: ignore
 
 
 def _parse_schedule_time(raw: str | None) -> datetime.datetime | None:
@@ -85,11 +157,14 @@ class TikTokClient:
         prev_quit_on_end = getattr(tt_config, "quit_on_end", True)
         tt_config.quit_on_end = False  # we own driver lifecycle for dumps
         try:
+            _monkeypatch_uploader_cookie_banner()
+            _patch_tutorial_overlay()
             logger.info("[TIKTOK] Starting upload: {}", video_path)
 
             # Preflight auth dump: helps debug cookie issues fast.
             try:
                 self.auth.authenticate_agent(driver)
+                _dismiss_cookie_banner(driver)
                 _debug_dump(driver, "pre_upload")
             except Exception:
                 _debug_dump(driver, "auth_failed")
@@ -120,6 +195,7 @@ class TikTokClient:
                 comment=allow_comments,
                 duet=allow_duet,
                 stitch=allow_stitch,
+                skip_split_window=True,  # avoid split window click path
             )
 
             if failed:
@@ -170,6 +246,7 @@ class TikTokClient:
                 headless=self.config.headless,
                 num_retries=2,
                 on_complete=_on_complete,
+                skip_split_window=True,
             )
 
             if failed:
