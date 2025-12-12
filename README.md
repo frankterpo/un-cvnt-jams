@@ -1,6 +1,39 @@
 # Social Media Automation Agent
 
-A robust, production-ready system for automated social media posting across TikTok, YouTube, and Instagram.
+A robust, production-ready system for automated social media posting across TikTok, YouTube, and Instagram. **All platforms are fully functional with smart automation that adapts to UI changes.**
+
+## ✅ Status
+
+- **TikTok**: ✅ Working (cookie-based, ~45s uploads)
+- **YouTube**: ✅ Working (profile-based, ~55s uploads)
+- **Instagram**: ✅ Working (smart modals, ~55s uploads)
+- **AI Captions**: ✅ Ollama integration ready
+- **GDrive Integration**: ✅ Automated sourcing ready
+
+## 🚀 Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Set up authentication (choose platforms you want)
+python scripts/tiktok_login_cookies.py --cookies-path cookies/tiktok_cookies.txt
+python scripts/youtube_login_profile.py --profile-dir chrome-profiles/youtube-main
+python scripts/instagram_login_profile.py --profile-dir chrome-profiles/instagram-main
+
+# 3. Configure environment (.env file)
+echo "TIKTOK_COOKIES_PATH=cookies/tiktok_cookies.txt" > .env
+echo "YOUTUBE_PROFILE_DIR=chrome-profiles/youtube-main" >> .env
+echo "INSTAGRAM_PROFILE_DIR=chrome-profiles/instagram-main" >> .env
+
+# 4. Test individual platforms
+PYTHONPATH=src python scripts/test_tiktok_upload.py --video sample_videos/test_tiktok.mp4 --caption "Test"
+PYTHONPATH=src python scripts/test_youtube_upload.py --video sample_videos/test_youtube.mp4 --title "Test" --description "Test"
+PYTHONPATH=src python scripts/test_instagram_upload.py --video sample_videos/test_tiktok.mp4 --caption "Test"
+
+# 5. Run full automation (with GDrive + AI)
+PYTHONPATH=src python scripts/ollama_agent.py
+```
 
 ## 🚀 Features
 
@@ -10,6 +43,7 @@ A robust, production-ready system for automated social media posting across TikT
 - **AI-powered captions**: Ollama integration for intelligent content generation
 - **Google Drive integration**: Automated video sourcing
 - **Headless & headful modes**: Flexible deployment options
+- **Optimized performance**: ~45-55 seconds per upload
 
 ## 📁 Project Structure
 
@@ -21,11 +55,12 @@ A robust, production-ready system for automated social media posting across TikT
 │   ├── captions.py              # Caption generation
 │   ├── captions_ollama.py       # AI caption generation
 │   ├── source_gdrive.py         # Google Drive integration
-│   └── __main__.py              # CLI entry point
+│   ├── __main__.py              # CLI entry point
+│   └── __init__.py              # Package init
 ├── src/tools/                   # Platform-specific tools
-│   ├── tiktok_*.py              # TikTok upload client
-│   ├── youtube_*.py             # YouTube upload client
-│   ├── instagram_*.py           # Instagram upload client
+│   ├── tiktok_*.py              # TikTok upload client (auth, browser, client, selectors)
+│   ├── youtube_*.py             # YouTube upload client (browser, client, selectors, metadata)
+│   ├── instagram_*.py           # Instagram upload client (browser, client, selectors)
 │   └── ai_locator.py            # AI element locator (optional)
 ├── scripts/                     # Testing & utility scripts
 │   ├── test_*.py                # Individual platform tests
@@ -33,11 +68,13 @@ A robust, production-ready system for automated social media posting across TikT
 │   ├── run_from_gdrive.py       # Direct GDrive workflow
 │   ├── ollama_agent.py          # Full AI pipeline
 │   └── sanity_check.py          # Configuration validation
-├── accounts.json                # Account credentials
-├── cookies/tiktok_cookies.txt   # TikTok authentication
-├── blissful-fiber-*.json        # Google Drive service account
+├── accounts.json                # Account credentials (Instagram/TikTok)
+├── cookies/tiktok_cookies.txt   # TikTok authentication cookies
+├── blissful-fiber-*.json        # Google Drive service account key
 ├── sample_videos/               # Test video files
-└── chrome-profiles/             # Browser profiles (auto-created)
+├── chrome-profiles/             # Browser profiles (auto-created)
+├── README.md                    # This documentation
+└── requirements.txt             # Python dependencies
 ```
 
 ## ⚙️ Setup
@@ -150,15 +187,18 @@ PYTHONPATH=src python scripts/run_from_gdrive.py
 
 ### Upload State Tracking
 
-The system maintains `pipeline_output/upload_state.json` to track successful uploads and prevent duplicates:
+The system maintains `pipeline_output/upload_state.json` (auto-created) to track successful uploads and prevent duplicates:
 
 ```json
 {
   "file_id_platform": "timestamp",
   "drive_file_123_tiktok": "2025-12-12T00:00:00",
-  "drive_file_123_youtube": "2025-12-12T00:01:00"
+  "drive_file_123_youtube": "2025-12-12T00:01:00",
+  "drive_file_123_instagram": "2025-12-12T00:02:00"
 }
 ```
+
+This ensures videos are never uploaded twice to the same platform.
 
 ## 🚦 Platform-Specific Notes
 
@@ -166,19 +206,22 @@ The system maintains `pipeline_output/upload_state.json` to track successful upl
 - Uses Netscape-format cookies for authentication
 - Requires manual cookie capture via browser
 - Headless mode supported
-- ~45 seconds per upload
+- **Performance**: ~45 seconds per upload
+- **Smart features**: Automatic tutorial overlay dismissal
 
 ### YouTube
 - Uses Chrome profile for authentication
 - Supports scheduled publishing
 - Multi-step upload wizard (Details → Checks → Visibility)
-- ~55 seconds per upload
+- **Performance**: ~55 seconds per upload
+- **Smart features**: Automatic Next button progression, Done button retry
 
 ### Instagram
 - Uses Chrome profile for authentication
 - Handles cookie banners and login modals automatically
-- Smart modal navigation with dynamic button detection
-- ~55 seconds per upload
+- **Smart modal navigation with dynamic button detection**
+- **Performance**: ~55 seconds per upload (optimized)
+- **Smart features**: Role-based button finding, JavaScript fallbacks, modal dismissal
 
 ## 🔍 Debugging
 
@@ -200,23 +243,33 @@ When uploads fail, debug HTML dumps are created:
 - Adjust timeouts in client code for slower networks
 - Use `sanity_check.py` to validate configuration
 
-## 📊 Architecture
+## 🧠 Smart Technology
+
+Unlike traditional automation scripts with brittle selectors, this system uses **intelligent element detection**:
 
 ### Smart Element Detection
-- Dynamic XPath selectors with fallbacks
-- JavaScript injection for complex cases
-- Role-based element targeting
-- Text content matching
+- **Dynamic XPath selectors** with multiple fallback strategies
+- **Role-based targeting** (`role="button"`) for reliable element finding
+- **Text content matching** for buttons without stable IDs
+- **JavaScript injection** for complex UI interactions
+- **AI-powered locator** (optional) for advanced cases
 
-### Idempotency
-- File-based state tracking
-- Platform-specific upload records
-- Automatic duplicate prevention
+### Platform-Specific Intelligence
+- **Instagram**: Automatic modal navigation, cookie banner dismissal, login modal handling
+- **YouTube**: Multi-step wizard progression, scheduled publishing support
+- **TikTok**: Tutorial overlay dismissal, upload progress monitoring
+
+### Idempotency & Reliability
+- **File-based state tracking** prevents duplicate uploads
+- **Platform-specific records** ensure cross-platform uniqueness
+- **Automatic retry logic** for transient failures
+- **Debug dumps** for troubleshooting UI changes
 
 ### Error Handling
-- Comprehensive exception catching
-- Debug dumps on failures
-- Graceful degradation with fallbacks
+- **Comprehensive exception catching** with platform-specific error types
+- **Graceful degradation** with fallback strategies
+- **Timeout management** for different network conditions
+- **Logging standardization** across all platforms
 
 ## 🤖 AI Integration
 
