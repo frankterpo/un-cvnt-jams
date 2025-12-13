@@ -249,9 +249,14 @@ class InstagramClient:
         video_path: Path,
         caption: str,
         post_type: PostType = "feed",
+        driver=None
     ) -> None:
         """Upload a video to Instagram."""
-        driver = build_chrome_for_instagram(self.config)
+        should_quit = False
+        if not driver:
+            driver = build_chrome_for_instagram(self.config)
+            should_quit = True
+            
         wait = WebDriverWait(driver, self.config.upload_timeout_seconds)
 
         try:
@@ -283,7 +288,8 @@ class InstagramClient:
             logger.exception("[INSTAGRAM] Upload failed for {}", video_path)
             raise InstagramUploadError(str(exc)) from exc
         finally:
-            driver.quit()
+            if should_quit:
+                driver.quit()
 
     def _ensure_logged_in(self, driver, wait: WebDriverWait) -> None:
         """Ensure the user is logged in to Instagram."""

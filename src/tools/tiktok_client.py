@@ -151,9 +151,15 @@ class TikTokClient:
         allow_duet: bool = True,
         allow_stitch: bool = True,
         schedule_time: str | None = None,
+        driver=None,
     ) -> None:
         """Upload a single video to TikTok."""
-        driver = build_chrome_for_tiktok(self.config)
+        
+        should_quit = False
+        if not driver:
+            driver = build_chrome_for_tiktok(self.config)
+            should_quit = True
+
         prev_quit_on_end = getattr(tt_config, "quit_on_end", True)
         tt_config.quit_on_end = False  # we own driver lifecycle for dumps
         try:
@@ -213,10 +219,11 @@ class TikTokClient:
             raise TikTokUploadError(str(exc)) from exc
         finally:
             tt_config.quit_on_end = prev_quit_on_end
-            try:
-                driver.quit()
-            except Exception:
-                pass
+            if should_quit:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
 
     def upload_batch(
         self,

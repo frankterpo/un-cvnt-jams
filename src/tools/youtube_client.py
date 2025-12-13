@@ -63,9 +63,16 @@ class YouTubeClient:
     def __init__(self, config: YouTubeConfig):
         self.config = config
 
-    def upload_video(self, video_path: Path, meta: YouTubeMetadata) -> str:
+    def upload_video(self, video_path: Path, meta: YouTubeMetadata, driver=None) -> str:
         """Upload a video to YouTube and return the video ID."""
-        driver = build_chrome_for_youtube(self.config.profile_dir, self.config.headless)
+        
+        # If driver is provided, use it (and don't close it). 
+        # Otherwise create one and manage lifecycle.
+        should_quit = False
+        if not driver:
+            driver = build_chrome_for_youtube(self.config.profile_dir, self.config.headless)
+            should_quit = True
+            
         wait = WebDriverWait(driver, self.config.upload_timeout_seconds)
 
         try:
@@ -92,7 +99,18 @@ class YouTubeClient:
             logger.exception("[YOUTUBE] Upload failed for {}", video_path)
             raise YouTubeUploadError(str(exc)) from exc
         finally:
-            driver.quit()
+            if should_quit:
+                driver.quit()
+
+    def _safe_click(self, driver, element, timeout: float = 2.0):
+        """
+        Attempt to click an element. If intercepted, try JS click.
+        """
+        try:
+            element.click()
+        except Exception as e:
+            logger.warning(f"[YOUTUBE] Click intercepted or failed, trying JS click: {e}")
+            driver.execute_script("arguments[0].click();", element)
 
     def _open_upload_dialog(self, driver, wait: WebDriverWait) -> None:
         """Open the YouTube Studio upload dialog."""
@@ -102,7 +120,7 @@ class YouTubeClient:
         except Exception:
             _debug_dump(driver, "yt_create_button")
             raise
-        create_btn.click()
+        self._safe_click(driver, create_btn)
 
         # 2) Click "Upload videos" menu item
         try:
@@ -110,7 +128,7 @@ class YouTubeClient:
         except Exception:
             _debug_dump(driver, "yt_upload_menu")
             raise
-        upload_item.click()
+        self._safe_click(driver, upload_item)
 
     def _attach_video_file(self, wait: WebDriverWait, video_path: Path) -> None:
         """Attach video file to upload."""
@@ -130,8 +148,15 @@ class YouTubeClient:
         desc_input.send_keys(meta.description)
 
         # Set "Not for kids"
+        # Wait for potential scrims to fade (simple sleep is sometimes safest for animations)
+        time.sleep(1.0)
         not_for_kids = wait.until(EC.element_to_be_clickable(S.NOT_FOR_KIDS_RADIO))
-        not_for_kids.click()
+        
+        # Scroll to view to minimize overlay issues
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", not_for_kids)
+        time.sleep(0.5)
+        
+        self._safe_click(driver, not_for_kids)
 
         # Click Next to proceed
         self._click_next(driver, wait)
@@ -143,11 +168,10 @@ class YouTubeClient:
         except TimeoutException:
             _debug_dump(driver, "yt_next_button")
             raise
-        driver.execute_script("arguments[0].scrollIntoView(true);", next_btn)
-        try:
-            next_btn.click()
-        except Exception:
-            driver.execute_script("arguments[0].click();", next_btn)
+        
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
+        time.sleep(0.5)
+        self._safe_click(driver, next_btn)
 
     def _advance_to_visibility(self, driver, wait: WebDriverWait) -> None:
         """
@@ -156,6 +180,7 @@ class YouTubeClient:
         """
         try:
             self._click_next(driver, wait)  # Details -> Checks
+            time.sleep(1.0) # buffer for transition
             self._click_next(driver, wait)  # Checks -> Visibility
         except Exception:
             _debug_dump(driver, "yt_advance_to_visibility")
@@ -166,7 +191,7 @@ class YouTubeClient:
         if meta.publish_at:
             # Schedule publication
             schedule_radio = wait.until(EC.element_to_be_clickable(S.SCHEDULE_RADIO))
-            schedule_radio.click()
+            self._safe_click(driver, schedule_radio)
 
             # Set date and time
             date_input = wait.until(EC.presence_of_element_located(S.SCHEDULE_DATE_INPUT))
@@ -181,21 +206,15 @@ class YouTubeClient:
         else:
             # Publish immediately
             public_radio = wait.until(EC.element_to_be_clickable(S.PUBLIC_RADIO))
-            public_radio.click()
+            self._safe_click(driver, public_radio)
 
         # Wait until Done/Publish is truly enabled (checks/processing gate this)
         done_timeout = int(os.getenv("YOUTUBE_DONE_TIMEOUT_SECONDS", "300"))
         done_btn = self._wait_for_done_enabled(driver, wait, timeout=done_timeout, poll_seconds=5)
 
-        driver.execute_script("arguments[0].scrollIntoView(true);", done_btn)
-        try:
-            done_btn.click()
-        except Exception:
-            try:
-                driver.execute_script("arguments[0].click();", done_btn)
-            except Exception:
-                _debug_dump(driver, "yt_done_click")
-                raise
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", done_btn)
+        time.sleep(0.5)
+        self._safe_click(driver, done_btn)
 
         # Wait for navigation that contains the video id and extract it
         wait.until(lambda d: "video/" in d.current_url or "watch?v=" in d.current_url)
@@ -213,10 +232,14 @@ class YouTubeClient:
         last_btn = None
         while time.time() < end:
             try:
+                # Re-locate element to avoid stale reference
                 btn = wait.until(EC.presence_of_element_located(S.DONE_BUTTON))
                 last_btn = btn
                 disabled = btn.get_attribute("aria-disabled")
-                if disabled not in ("true", "True", "1"):
+                # Also check standard 'disabled' property just in case
+                is_disabled_prop = driver.execute_script("return arguments[0].disabled;", btn)
+                
+                if disabled not in ("true", "True", "1") and not is_disabled_prop:
                     return btn
             except Exception:
                 pass

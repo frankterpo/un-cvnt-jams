@@ -19,6 +19,12 @@ google-auth
 # HTTP client for Ollama planner
 requests
 
+# Database
+sqlalchemy>=2.0
+alembic>=1.12
+psycopg2-binary>=2.9
+gologin>=1.0.0
+
 # Existing dependencies (if any)
 # Add other project dependencies here as needed
 

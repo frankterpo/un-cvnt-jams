@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
@@ -43,12 +43,32 @@ class InstagramConfig(BaseModel):
     upload_timeout_seconds: int = 180
 
 
+class GoLoginConfig(BaseModel):
+    """Configuration for GoLogin browser automation."""
+    
+    token: str
+    account_email: str  # For profile mapping
+    profiles: Dict[str, str] = {}  # profile_name -> profile_id
+    headless: bool = False
+    timeout_seconds: int = 300
+
 class Settings(BaseModel):
     """Global settings for the social agent."""
 
     tiktok: TikTokConfig | None = None
     youtube: YouTubeConfig | None = None
     instagram: InstagramConfig | None = None
+    gologin_accounts: Dict[str, GoLoginConfig] = {}  # email -> config
+
+    def get_gologin_credentials(self, account_name: str) -> tuple[str, str] | None:
+        """
+        Find (token, profile_id) for a named social account.
+        Returns None if not configured.
+        """
+        for config in self.gologin_accounts.values():
+            if account_name in config.profiles:
+                return config.token, config.profiles[account_name]
+        return None
 
 
 def _env_path(name: str) -> Path:
@@ -78,7 +98,42 @@ def load_settings() -> Settings:
             headless=os.getenv("INSTAGRAM_HEADLESS", "true").lower() == "true",
         )
 
-        return Settings(tiktok=tiktok, youtube=youtube, instagram=instagram)
+        # Load GoLogin accounts
+        gologin_accounts = {}
+        
+        # Account 1: frankpablote@gmail.com
+        token1 = os.getenv("GOLOGIN_TOKEN_1")
+        if token1:
+            profiles1 = {
+                "viixenviices": os.getenv("GOLOGIN_PROFILE_VIIXENVIICES"),
+                "popmessparis": os.getenv("GOLOGIN_PROFILE_POPMESSPARIS"),
+                "halohavok": os.getenv("GOLOGIN_PROFILE_HALOHAVOK"),
+            }
+            gologin_accounts["frankpablote@gmail.com"] = GoLoginConfig(
+                token=token1,
+                account_email="frankpablote@gmail.com",
+                profiles={k: v for k, v in profiles1.items() if v}
+            )
+        
+        # Account 2: frankpablote@mac.com  
+        token2 = os.getenv("GOLOGIN_TOKEN_2")
+        if token2:
+            profiles2 = {
+                "cigsntofu": os.getenv("GOLOGIN_PROFILE_CIGSNTOFU"),
+                "lavenderliqour": os.getenv("GOLOGIN_PROFILE_LAVENDERLIQOUR"),
+                "hotcaviarx": os.getenv("GOLOGIN_PROFILE_HOTCAVIARX"),
+            }
+            gologin_accounts["frankpablote@mac.com"] = GoLoginConfig(
+                token=token2,
+                account_email="frankpablote@mac.com", 
+                profiles={k: v for k, v in profiles2.items() if v}
+            )
+        
+        return Settings(
+            tiktok=tiktok,
+            youtube=youtube,
+            instagram=instagram,
+            gologin_accounts=gologin_accounts
+        )
     except ValidationError as e:
         raise RuntimeError(f"Invalid settings: {e}") from e
-
