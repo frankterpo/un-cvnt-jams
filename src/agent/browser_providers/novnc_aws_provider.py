@@ -36,10 +36,11 @@ class NovncAwsProvider(BrowserProvider):
 
         # 1. Config Resolution
         provider_config = profile_row.provider.config or {}
-        profile_config = profile_row.config or {}
+        # profile_row does not have config column currently
+        profile_config = {}
         
         image = provider_config.get("docker_image", "social/novnc-browser:latest")
-        internal_port = int(provider_config.get("default_webdriver_port", 4444)) # Or 9515 depending on image
+        internal_port = int(provider_config.get("default_webdriver_port", 9515)) # Default to 9515 matching Image
         # Note: Previous noVNC script used 9515. Consolidating to single port if possible, 
         # or respect config.
         
@@ -58,7 +59,7 @@ class NovncAwsProvider(BrowserProvider):
         
         # Env vars for container
         environment = {
-            "SCREEN_RESOLUTION": "1920x1080x24",
+            "SCREEN_RESOLUTION": "1920x1080",
             "SE_NODE_MAX_SESSIONS": "1", # If using selenium grid image
         }
         
@@ -117,28 +118,42 @@ class NovncAwsProvider(BrowserProvider):
             target_host = self._resolve_docker_host()
             
             # Construct URLs
-            # Using standard Selenium /wd/hub path?
-            # Or root? Depends on image entrypoint. 
-            # Previous noVNC script (start.sh) used chromedriver direct on 9515 -> root?
-            # Selenium Standalone uses /wd/hub.
-            # Let's assume /wd/hub for robustness or check image type.
-            # If our 'social/novnc-browser' uses direct chromedriver, it is root.
-            # If we switch to 'selenium/standalone-chrome', it is /wd/hub.
+            webdriver_url = f"http://{target_host}:{host_wd_port}/wd/hub"
             
-            # For now, let's assume /wd/hub as it is standard for RemoteWebDriver.
-            # BUT if we use our custom image, we need to ensure it matches.
-            # Our custom start.sh started chromedriver on WEBDRIVER_PORT. This serves / usually.
-            # Selenium Remote client often appends /wd/hub if not present? Or expects it?
+            # Wait for ChromeDriver to be ready
+            # Docker reports "Running" and ports mapped, but process inside needs time to bind
+            import urllib.request
+            import urllib.error
             
-            # Safe bet: If using `social/novnc-browser` (our custom one), ensure start.sh is compatible.
-            # Or just use `http://host:port` and let client handle?
-            # Standard `webdriver.Remote` defaults to `/wd/hub`.
-            # To support that, our custom image needs to serve there, OR we pass custom command_executor to Remote.
+            logger.info(f"[{trace_id}] Waiting for WebDriver readiness at {webdriver_url}...")
+            ready = False
+            last_error = None
+            start_wait = time.time()
             
-            # Let's use `http://host:port` and let the client append /wd/hub if it's default, 
-            # Or explicitly:
-            webdriver_url = f"http://{target_host}:{host_wd_port}"
+            for i in range(60): # Retry for 60 seconds
+                try:
+                    # Check status endpoint with increased timeout (3s) to handle initial latency
+                    with urllib.request.urlopen(f"{webdriver_url}/status", timeout=3) as response:
+                        if response.status == 200:
+                            elapsed = time.time() - start_wait
+                            logger.info(f"[{trace_id}] WebDriver ready in {elapsed:.1f}s")
+                            ready = True
+                            break
+                        else:
+                            last_error = f"HTTP {response.status}"
+                except (OSError, urllib.error.URLError) as e:
+                    # Capture exact error for debugging (ConnectionRefused vs Timeout vs no route)
+                    last_error = f"{type(e).__name__}: {e}"
+                    # Log only periodically to avoid spam, or on final attempt
+                    if i % 10 == 0 or i == 59:
+                         logger.debug(f"[{trace_id}] Waiting for WebDriver... ({last_error})")
+                    time.sleep(1)
             
+            if not ready:
+                container.stop()
+                container.remove()
+                raise BrowserProviderError(f"Timed out waiting for ChromeDriver readiness. Last error: {last_error}", code="NOVNC_AWS_TIMEOUT", provider=self.code)
+
             novnc_url = None
             if host_vnc_port:
                 novnc_url = f"http://{target_host}:{host_vnc_port}/vnc.html"
