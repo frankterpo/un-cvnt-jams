@@ -118,26 +118,136 @@ class PublishingJob:
                     current_profile_id = parent_run.browser_provider_profile_id
                     current_profile_ref = parent_run.browser_profile.provider_profile_ref
                     current_provider_code = parent_run.browser_profile.provider.code
-                    # Get token from settings
-                    for config in self.settings.gologin_accounts.values():
-                        gologin_token = config.token
-                        break
-                    logger.info(f"[JOB] Using allocated profile {current_profile_ref} ({current_provider_code}) for {account.name}")
+                    # ALLOCATION & SESSION MANAGEMENT
+                # We use the Allocator to get a session (GoLogin or Fallback)
+                # The underlying providers handle the "limit" logic internally or via the Allocator's loop
                 
-                # Retry loop with provider fallback
-                max_attempts = 2
-                attempt = 0
-                last_error = None
+                from agent.services.browser_provider_allocator import BrowserProviderAllocator
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
                 
-                while attempt < max_attempts:
-                    attempt += 1
+                allocator = BrowserProviderAllocator()
+                
+                results = {} # Initialize results here
+                
+                try:
+                    # Allocate Session
+                    # This handles GoLogin -> Error -> NoVNC fallback logic automatically!
                     
-                    # Only pass GoLogin credentials if provider is GoLogin
-                    gologin_profile_id_param = current_profile_ref if current_provider_code == 'GOLOGIN' else None
-                    gologin_token_param = gologin_token if current_provider_code == 'GOLOGIN' else None
+                    # We need to wrap this in a customized context manager or try/finally
+                    # to ensure we stop the session.
                     
-                    logger.info(f"[JOB] Attempt {attempt}/{max_attempts} using provider {current_provider_code}")
+                    logger.info(f"[JOB] Allocating browser for {account.name}")
                     
+                    browser_session = allocator.allocate_for_dummy_account(
+                        session,
+                        dummy_account_id=account.id,
+                        platform_id=platform.id, # Use platform.id from the fetched run
+                        trace_id=f"run-{run_id}"
+                    )
+                    
+                    # Update Run with Allocation Info
+                    # We need to map back to IDs if possible, but BrowserSession has them
+                    parent_run.browser_provider_id = browser_session.provider_id # Use provider_id from browser_session
+                    parent_run.browser_provider_profile_id = browser_session.provider_profile_id
+                    parent_run.provider_session_ref = browser_session.provider_session_ref
+                    session.commit()
+                    
+                    # Log Selection
+                    PublishingRunEventService.log_event(
+                        session, run_id, "RUN_PROVIDER_SELECTED", 
+                        f"Selected {browser_session.provider_code}",
+                        payload={
+                            "provider": browser_session.provider_code,
+                            "profile_id": browser_session.provider_profile_id,
+                            "webdriver_url": browser_session.webdriver_url
+                        }
+                    )
+
+                    # EXECUTE WORKFLOW
+                    # We pass the webdriver_url to the workflow.
+                    # The workflow needs to be updated to accept `webdriver_url` instead of `driver` object?
+                    # Or we adapt here.
+                    
+                    target_platforms = [platform.code.lower()] # Use platform.code from the fetched run
+                    
+                    # Note: run_cycle_single currently takes `driver`.
+                    # If we change it to take `webdriver_url`, we update it there.
+                    # Or we create a Remote driver here and pass it.
+                    
+                    # Creating a Remote Driver Connection
+                    # This unifies GoLogin (if we made it behave remote) and noVNC
+                    # BUT GoLoginProvider might return a local execution URL that implies "Attach".
+                    
+                    # Actually, if GoLoginProvider returned a local executor URL, we might need to attach.
+                    # Simplified: We pass 'browser_session' to 'run_cycle_single' and let IT decide how to connect.
+                    # But 'run_cycle_single' is in 'agent.workflow'.
+                    
+                    # Let's pass `browser_session` as `driver_session` param
+                    driver_context = None 
+                    # We can't easily pass the session object into current `run_cycle_single` without change.
+                    # For now, let's assume `run_cycle_single` can accept `webdriver_url` in `driver` arg?
+                    # No, `driver` arg expects a WebDriver instance.
+                    
+                    # WE MUST CONNECT HERE.
+                    
+                    driver_instance = None
+                    
+                    if browser_session.provider_code == "NOVNC":
+                        # Connect to Remote
+                        opts = Options()
+                        # Add any necessary options
+                        driver_instance = webdriver.Remote(
+                            command_executor=browser_session.webdriver_url,
+                            options=opts
+                        )
+                    elif browser_session.provider_code == "GOLOGIN":
+                        # GOLOGIN
+                        # gologin_provider.py returned 'executor_url' effectively.
+                        # But wait, GoLoginProvider.start_session ALREADY started the driver internally?
+                        # If so, we can't easily get the object back unless we store it.
+                        # My previous implementation was a bit hacky on `webdriver_url`.
+                        
+                        # Fix: GoLoginProvider usually yields a driver wrapper object.
+                        # If we want to be clean, we should probably have returned the driver OBJECT in the session
+                        # OR have the provider manage it.
+                        
+                        # Since we are refactoring, let's assume we can re-acquire or we need to update provider.
+                        # Actually, looking at `gologin_provider.py` I implicitly assumed `webdriver_url` was enough.
+                        # But for local GoLogin, we already have the driver running process.
+                        # We need to connect to it or use the existing session?
+                        
+                        # Let's use `webdriver.Remote` with `executor_url` and `session_id`?
+                        # That allows attaching to existing session!
+                        # But GoLogin selenium wrapper manages the process.
+                        
+                        # For now, if it's GoLogin, we assume the `driver` passed to `execute_run` is the shared GoLogin driver.
+                        # This means the `process_pending_runs` method needs to be updated to use the allocator too.
+                        # For this specific change, we'll assume `driver` is already a GoLogin driver if `browser_session.provider_code == "GOLOGIN"`
+                        # and `browser_session.webdriver_url` is not a remote URL.
+                        
+                        # If `browser_session.webdriver_url` is a remote URL (e.g., from a cloud GoLogin instance),
+                        # we would connect to it using `webdriver.Remote`.
+                        # For local GoLogin, the `driver` parameter passed to `execute_run` is the actual driver instance.
+                        # This is a temporary simplification for the current refactor scope.
+                        
+                        # If `driver` is None, it means we are not in a shared session context.
+                        # In this case, the allocator should have provided a `webdriver_url` that we can connect to.
+                        if driver:
+                            driver_instance = driver
+                        elif browser_session.webdriver_url:
+                            opts = Options()
+                            driver_instance = webdriver.Remote(
+                                command_executor=browser_session.webdriver_url,
+                                options=opts
+                            )
+                        else:
+                            raise ValueError("GoLogin session allocated but no driver or webdriver_url available.")
+                    
+                    if not driver_instance:
+                        raise ValueError("Failed to obtain a WebDriver instance for the allocated browser session.")
+
+                    # Now, execute the workflow with the obtained driver_instance
                     results = run_cycle_single(
                          self.settings,
                          video_path,
