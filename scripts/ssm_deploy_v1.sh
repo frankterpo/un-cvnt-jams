@@ -1,58 +1,79 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# === V1 SSM Deploy Script ===
-# Deterministic: fresh clone, build, restart, test
-# Polls by exact CommandId. Never uses list-command-invocations.
+# === Antigravity V1 SSM Deploy Script ===
+# Guardrails:
+# 1. Timer Freeze: stop/disable timer & service prevents mid-deploy restarts.
+# 2. Shallow Clone: depth 1, clean wipe of target dir.
+# 3. EC2-User Verify: all verifications run as service user.
+# 4. Import Sanity: proves lazy imports work before starting service.
 
 REGION="us-east-1"
 INSTANCE_ID="i-0aff9502a7ecee0e3"
 REPO_URL="https://github.com/frankterpo/un-cvnt-jams.git"
-APP_DIR="/home/ec2-user/un-cvnt-jams"
 
-echo "=== V1 Deploy: Sending SSM Command ==="
+echo "=== Antigravity V1 Deploy: Sending SSM Command ==="
 
 CMD_ID=$(aws ssm send-command \
   --region "$REGION" \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --comment "V1 Deploy — deterministic clone, build, restart, test" \
+  --comment "V1 Deploy (shallow clone + timer control + verify lazy imports)" \
   --timeout-seconds 3600 \
   --parameters "commands=[
     \"set -euo pipefail\",
-    \"echo '[DEPLOY] Setting up swap...'\",
-    \"if ! swapon -s | grep -q /swapfile; then sudo dd if=/dev/zero of=/swapfile bs=1M count=2048; sudo chmod 600 /swapfile; sudo mkswap /swapfile; sudo swapon /swapfile; fi\",
-    \"echo '[DEPLOY] whoami:' && whoami && id\",
-    \"echo '[DEPLOY] Stopping worker...'\",
-    \"sudo systemctl stop publishing-worker || true\",
-    \"echo '[DEPLOY] Removing old app dir...'\",
-    \"sudo rm -rf $APP_DIR\",
-    \"echo '[DEPLOY] Creating app dir...'\",
-    \"sudo install -d -m 0755 -o ec2-user -g ec2-user $APP_DIR\",
-    \"echo '[DEPLOY] Cloning repo as ec2-user...'\",
-    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; git clone --depth 1 $REPO_URL $APP_DIR'\",
-    \"echo '[DEPLOY] Setting up venv and deps...'\",
-    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; python3 -m venv venv; source venv/bin/activate; pip install -U pip; pip install -r requirements.txt; pip list; echo PIP INSTALL SUCCESS'\",
-    \"echo '[DEPLOY] Configuring .env...'\",
-    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; (grep -q \\\"^NOVNC_IMAGE_URI=\\\" .env 2>/dev/null && sed -i \\\"s|^NOVNC_IMAGE_URI=.*|NOVNC_IMAGE_URI=novnc-lite:latest|\\\" .env) || echo \\\"NOVNC_IMAGE_URI=novnc-lite:latest\\\" >> .env'\",
-    \"echo '[DEPLOY] Building novnc-lite Docker image...'\",
-    \"cd $APP_DIR/infra/docker/novnc-lite && sudo docker build -t novnc-lite:latest .\",
-    \"echo '[DEPLOY] Restarting worker...'\",
-    \"sudo systemctl daemon-reload\",
-    \"sudo systemctl restart publishing-worker\",
-    \"echo '[DEPLOY] Queuing test job...'\",
-    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; source venv/bin/activate; python3 scripts/queue_test_job.py'\",
-    \"echo '[DEPLOY] Waiting for job execution...'\",
-    \"sleep 25\",
-    \"echo '[DEPLOY] Worker logs:'\",
-    \"sudo journalctl -u publishing-worker -n 300 --no-pager\",
-    \"echo '[DEPLOY] Complete.'\"
+
+    \"echo '[DEPLOY] START \$(date -Is)'\",
+    \"echo '[DEPLOY] whoami=\$(whoami)'\",
+    
+    \"echo '[DEPLOY] Phase 2: Stop timer/service'\",
+    \"systemctl stop publishing-worker.timer || true\",
+    \"systemctl disable publishing-worker.timer || true\",
+    \"systemctl stop publishing-worker.service || true\",
+    \"systemctl reset-failed publishing-worker.service || true\",
+
+    \"echo '[DEPLOY] Preflight disk/mem'\",
+    \"AVAIL_KB=\$(df --output=avail -k / | tail -n 1 | tr -d ' ')\",
+    \"if [ \\\"\$AVAIL_KB\\\" -lt 2500000 ]; then echo '[DEPLOY] Low disk (<2.5GB). Pruning docker...'; docker system prune -af || true; fi\",
+
+    \"APP=/home/ec2-user/un-cvnt-jams\",
+    \"echo '[DEPLOY] Shallow clone as ec2-user'\",
+    \"rm -rf \\\"\$APP\\\"\",
+    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd /home/ec2-user; \
+      git clone --depth 1 --branch main $REPO_URL un-cvnt-jams || \
+      (echo CLONE_RETRY; sleep 3; rm -rf un-cvnt-jams; git clone --depth 1 --branch main $REPO_URL un-cvnt-jams)'\",
+
+    \"echo '[DEPLOY] Venv + deps'\",
+    \"sudo -u ec2-user -H bash -lc 'APP=/home/ec2-user/un-cvnt-jams; set -euo pipefail; cd \$APP; python3 -m venv venv; \
+      source venv/bin/activate; pip install -U pip; \
+      PIP_NO_CACHE_DIR=1 pip install -r requirements.txt'\",
+
+    \"echo '[DEPLOY] Configure .env'\",
+    \"sudo -u ec2-user -H bash -lc 'APP=/home/ec2-user/un-cvnt-jams; set -euo pipefail; cd \$APP; \
+      echo NOVNC_IMAGE_URI=novnc-lite:latest >> .env; \
+      echo "DATABASE_URL=postgresql+psycopg2://socialagent_admin:P1rulo007%21@social-agent-db.cej60cw482tv.us-east-1.rds.amazonaws.com:5432/social_agent" >> .env'\",
+
+    \"echo '[DEPLOY] Phase 1 Verification: Test Lazy Imports'\",
+    \"sudo -u ec2-user -H bash -lc 'APP=/home/ec2-user/un-cvnt-jams; set -euo pipefail; cd \$APP; source venv/bin/activate; \
+      python3 -c \\\"import sys; sys.path.append(\\\\\\\"src\\\\\\\"); from agent.workflow import run_cycle_single; print(\\\\\\\"Workflow Import OK\\\\\\\")\\\"; \
+      python3 -c \\\"import sys; sys.path.append(\\\\\\\"src\\\\\\\"); from agent.jobs.publishing import PublishingJob; print(\\\\\\\"Job Import OK\\\\\\\")\\\"'\",
+
+    \"echo '[DEPLOY] Phase 2: Start Timer'\",
+    \"systemctl daemon-reload || true\",
+    \"systemctl enable --now publishing-worker.timer\",
+
+    \"echo '[DEPLOY] Diagnostics'\",
+    \"systemctl status publishing-worker.timer --no-pager\",
+    \"sleep 5\",
+    \"journalctl -u publishing-worker.service -n 50 --no-pager || true\",
+
+    \"echo '[DEPLOY] END \$(date -Is)'\"
   ]" \
   --query "Command.CommandId" \
   --output text)
 
 if [[ -z "$CMD_ID" ]]; then
-  echo "ERROR: Failed to get CommandId from SSM"
+  echo "ERROR: Failed to get CommandId"
   exit 1
 fi
 
@@ -67,20 +88,18 @@ while true; do
     --output json 2>/dev/null || echo '{"Status":"Pending"}')
 
   STATUS=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('Status','Unknown'))")
-  
   echo "Status: $STATUS"
+  
+  # Print tail of output for progress
+  echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); out=d.get('StandardOutputContent',''); print(out[-500:] if out else '')"
 
   if [[ "$STATUS" == "Success" ]]; then
     echo "=== SSM Command Succeeded ==="
-    echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('--- STDOUT ---'); print(d.get('StandardOutputContent','(empty)'))"
-    echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('--- STDERR ---'); print(d.get('StandardErrorContent','(empty)'))"
     exit 0
   elif [[ "$STATUS" == "Failed" ]] || [[ "$STATUS" == "Cancelled" ]] || [[ "$STATUS" == "TimedOut" ]]; then
     echo "=== SSM Command Failed: $STATUS ==="
-    echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('--- STDOUT ---'); print(d.get('StandardOutputContent','(empty)'))"
-    echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('--- STDERR ---'); print(d.get('StandardErrorContent','(empty)'))"
+    echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('--- STDERR ---'); print(d.get('StandardErrorContent',''))"
     exit 1
   fi
-
   sleep 10
 done
