@@ -61,3 +61,12 @@ pipeline_output/jobs/
 scooby_shorts_test.json
 scooby_shorts_advanced_test.json
 test_*.json
+
+# Secrets (never commit)
+.env
+.env.*
+accounts.json
+accounts*.json
+**/cookies*.json
+**/*cookies*
+chrome-profiles/
