@@ -15,7 +15,7 @@ echo "Starting XFCE + VNC + Chrome..."
 # Remove lock files if any
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
 
-vncserver $DISPLAY -geometry $SCREEN_RESOLUTION -depth 24 -SecurityTypes None -localhost no
+vncserver $DISPLAY -geometry $SCREEN_RESOLUTION -depth 24 -SecurityTypes None -localhost no --I-KNOW-THIS-IS-INSECURE
 
 # 2. Start Window Manager
 export DISPLAY=$DISPLAY
@@ -48,18 +48,20 @@ if [ ! -z "$BROWSER_PROXY_URL" ]; then
 fi
 
 # Profile dir
-USER_DATA_DIR=${BROWSER_PROFILE_DIR:-/home/browser_user/.browser_profile}
+# Start ChromeDriver
+# ChromeDriver will spawn Chrome. We need to point it to correct display.
+# Also ensure it listens on 0.0.0.0 for external connection.
+echo "Starting ChromeDriver on $WEBDRIVER_PORT..."
 
-google-chrome \
-  --no-sandbox \
-  --user-data-dir="$USER_DATA_DIR" \
-  --remote-debugging-port=$WEBDRIVER_PORT \
-  --remote-debugging-address=0.0.0.0 \
-  --disable-dev-shm-usage \
-  --start-maximized \
-  --disable-gpu \
-  $PROXY_ARGS \
-  about:blank &
+chromedriver \
+  --port=$WEBDRIVER_PORT \
+  --whitelisted-ips="" \
+  --allowed-origins="*" \
+  --url-base=/wd/hub \
+  --verbose &
+# Chromedriver needs to know about user-data-dir?
+# Usually clients pass options. But if we want persistence, we rely on client passing args or default.
+# For this basic image, client options rule.
 
 # Keep container alive
 wait

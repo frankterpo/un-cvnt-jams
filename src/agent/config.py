@@ -59,6 +59,7 @@ class Settings(BaseModel):
     youtube: YouTubeConfig | None = None
     instagram: InstagramConfig | None = None
     gologin_accounts: Dict[str, GoLoginConfig] = {}  # email -> config
+    max_novnc_concurrent_sessions: int = 5
 
     def get_gologin_credentials(self, account_name: str) -> tuple[str, str] | None:
         """
@@ -133,7 +134,8 @@ def load_settings() -> Settings:
             tiktok=tiktok,
             youtube=youtube,
             instagram=instagram,
-            gologin_accounts=gologin_accounts
+            gologin_accounts=gologin_accounts,
+            max_novnc_concurrent_sessions=int(os.getenv("MAX_NOVNC_CONCURRENT_SESSIONS", "5"))
         )
     except ValidationError as e:
         raise RuntimeError(f"Invalid settings: {e}") from e

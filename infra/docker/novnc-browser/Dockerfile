@@ -26,16 +26,25 @@ RUN curl -sS -o - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-ke
     apt-get update && apt-get install -y google-chrome-stable && \
     rm -rf /var/lib/apt/lists/*
 
-# Install ChromeDriver behavior (undetected-chromedriver usually manages this, 
-# but having the binary is good for standard Selenium).
-# We'll skip manual chromedriver install as modern Selenium manages it or we use undetected-chromedriver.
+# Install ChromeDriver
+RUN CHROME_VER=$(google-chrome --version | awk '{print $3}') && \
+    CHROME_MAJOR=$(echo $CHROME_VER | cut -d . -f 1) && \
+    # Fetch latest matching driver version logic or simple 'latest' if unstable
+    # Using LATEST_RELEASE for safety
+    DRIVER_VER=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_$CHROME_MAJOR") || DRIVER_VER="latest" && \
+    echo "Installing ChromeDriver $DRIVER_VER for Chrome $CHROME_VER" && \
+    curl -sS -o chromedriver_linux64.zip "https://storage.googleapis.com/chrome-for-testing-public/$DRIVER_VER/linux64/chromedriver-linux64.zip" && \
+    unzip chromedriver_linux64.zip && \
+    mv chromedriver-linux64/chromedriver /usr/bin/chromedriver && \
+    chmod +x /usr/bin/chromedriver && \
+    rm chromedriver_linux64.zip
 
 # Environment defaults
 ENV DISPLAY=:1
 ENV VNC_PORT=5901
 ENV NOVNC_PORT=6080
 ENV WEBDRIVER_PORT=9515
-ENV SCREEN_RESOLUTION=1920x1080x24
+ENV SCREEN_RESOLUTION=1920x1080
 
 # Create user
 RUN useradd -m -s /bin/bash browser_user

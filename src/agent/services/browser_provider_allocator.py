@@ -94,8 +94,8 @@ class BrowserProviderAllocator:
                 
                 return browser_session
                 
-            except BrowserProviderError as e:
-                logger.warning(f"[{trace_id}] Provider {p_code} failed: {e}")
+            except Exception as e:
+                logger.warning(f"[{trace_id}] Provider {p_code} failed (Fallback): {e}")
                 last_error = e
                 
                 # If it's a limit error, we continue to next provider (Fallback)

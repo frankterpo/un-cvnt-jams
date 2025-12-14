@@ -42,7 +42,23 @@ class PublishingRunService:
         user_id = created_by_user_id or 1 # Default admin
         
         # Allocate browser provider
-        provider_id, profile_id, profile_ref = BrowserProviderAllocator.allocate(session, account_id)
+        # Allocate browser provider (Static selection)
+        # We just pick the first active profile for the account.
+        from agent.db.models import BrowserProvider, BrowserProviderProfile
+        profile = session.execute(
+            select(BrowserProviderProfile)
+            .join(BrowserProvider)
+            .where(
+                BrowserProviderProfile.dummy_account_id == account_id,
+                BrowserProviderProfile.status == 'active',
+                BrowserProvider.is_active == True
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+        
+        provider_id = profile.browser_provider_id if profile else None
+        profile_id = profile.id if profile else None
+        profile_ref = None
 
         # Create parent Run with provider info
         run = PublishingRun(

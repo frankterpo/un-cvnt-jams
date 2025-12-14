@@ -1,0 +1,11 @@
+[Unit]
+Description=EC2 Publishing Worker
+After=network.target
+
+[Service]
+Type=oneshot
+User=ec2-user
+WorkingDirectory=/home/ec2-user/un-cvnt-jams
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=/home/ec2-user/un-cvnt-jams/.env
+ExecStart=/home/ec2-user/un-cvnt-jams/venv/bin/python3 /home/ec2-user/un-cvnt-jams/scripts/run_publishing_worker.py

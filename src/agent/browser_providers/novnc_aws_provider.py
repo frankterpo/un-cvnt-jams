@@ -150,9 +150,18 @@ class NovncAwsProvider(BrowserProvider):
                     time.sleep(1)
             
             if not ready:
+                logs = "No logs available"
+                try:
+                    full_log = container.logs().decode('utf-8')
+                    logs = "\n".join(full_log.splitlines()[-50:]) # Capture last 50 lines
+                except Exception as log_err:
+                    logs = f"Failed to retrieve logs: {log_err}"
+                
+                logger.error(f"Container logs for failed verification:\n{logs}")
+                
                 container.stop()
                 container.remove()
-                raise BrowserProviderError(f"Timed out waiting for ChromeDriver readiness. Last error: {last_error}", code="NOVNC_AWS_TIMEOUT", provider=self.code)
+                raise BrowserProviderError(f"Timed out waiting for ChromeDriver readiness. Last error: {last_error}. Container logs: {logs[:500]}...", code="NOVNC_AWS_TIMEOUT", provider=self.code)
 
             novnc_url = None
             if host_vnc_port:
@@ -193,7 +202,7 @@ class NovncAwsProvider(BrowserProvider):
         d_host = os.environ.get("DOCKER_HOST")
         if d_host and "tcp://" in d_host:
              return d_host.split("://")[1].split(":")[0]
-        return "localhost"
+        return "127.0.0.1"
 
     def _is_port_open(self, host, port):
         try:

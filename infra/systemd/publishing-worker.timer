@@ -1,0 +1,10 @@
+[Unit]
+Description=Run publishing worker every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=publishing-worker.service
+
+[Install]
+WantedBy=timers.target

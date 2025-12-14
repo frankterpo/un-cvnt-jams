@@ -114,6 +114,10 @@ def main():
                 f"{internal_port}/tcp": None,  # Dynamic host port
                 "6080/tcp": None,
             },
+            environment={
+                "SCREEN_RESOLUTION": "1920x1080",
+                "SE_NODE_MAX_SESSIONS": "1",
+            },
             shm_size='2g'
         )
         print(f"   Container started: {container.short_id} ({container_name})")
