@@ -39,8 +39,8 @@ class NovncAwsProvider(BrowserProvider):
         # profile_row does not have config column currently
         profile_config = {}
         
-        image = provider_config.get("docker_image", "social/novnc-browser:latest")
-        internal_port = int(provider_config.get("default_webdriver_port", 9515)) # Default to 9515 matching Image
+        image = os.environ.get("NOVNC_IMAGE_URI", provider_config.get("docker_image", "social/novnc-browser:latest"))
+        internal_port = int(provider_config.get("default_webdriver_port", 4444)) # Default to 4444 (novnc-lite)
         # Note: Previous noVNC script used 9515. Consolidating to single port if possible, 
         # or respect config.
         
@@ -54,7 +54,8 @@ class NovncAwsProvider(BrowserProvider):
         # Webdriver Port -> random
         ports = {
             f"{internal_port}/tcp": None,
-            "6080/tcp": None
+            "6080/tcp": None,
+            "7900/tcp": None
         }
         
         # Env vars for container
@@ -76,7 +77,10 @@ class NovncAwsProvider(BrowserProvider):
                 name=container_name,
                 ports=ports,
                 environment=environment,
-                shm_size='2g'
+                shm_size='2g',
+                volumes={
+                    '/var/lib/publishing-worker/job_assets': {'bind': '/job_assets', 'mode': 'rw'}
+                }
             )
             
             # 3. Wait for Readiness
@@ -93,7 +97,7 @@ class NovncAwsProvider(BrowserProvider):
                 
                 # Check ports
                 p_wd = container.ports.get(f"{internal_port}/tcp")
-                p_vnc = container.ports.get("6080/tcp")
+                p_vnc = container.ports.get("7900/tcp") or container.ports.get("6080/tcp")
                 
                 if p_wd:
                     host_wd_port = p_wd[0]['HostPort']

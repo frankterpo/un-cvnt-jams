@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     JSON,
+    LargeBinary,
     func
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -216,7 +217,17 @@ class Asset(Base):
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True) # Nullable for migration
     campaign_id: Mapped[Optional[int]] = mapped_column(ForeignKey("campaigns.id"), nullable=True)
     
-    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    # V1 Pipeline Storage Locators
+    storage_type: Mapped[str] = mapped_column(String(50), default="S3", nullable=False) # S3 | RDS_BLOB
+    
+    # S3 Storage
+    s3_bucket: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    s3_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    
+    # RDS Blob Storage (Bridge)
+    # Using LargeBinary for proper BLOB storage (bytea in Postgres, LONGBLOB in MySQL)
+    blob_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+
     original_name: Mapped[str] = mapped_column(String(255), nullable=False) # Was original_filename
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

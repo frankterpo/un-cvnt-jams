@@ -64,35 +64,151 @@ class PublishingJob:
             logger.info(f"[JOB] Starting post {run_id} for {platform.code} (Asset {asset.id})")
             PublishingRunService.update_run_status(session, run_id, "RUNNING")
 
-            # 3. Prepare arguments for workflow
-            video_path = Path(asset.storage_key)
-            if not video_path.exists():
-                 logger.info(f"File {video_path} not found locally. Attempting GDrive download...")
-                 try:
-                     from agent.source_gdrive import build_drive_client, download_video
-                     import os
-                     
-                     sa_json = os.getenv("GDRIVE_SA_JSON", "blissful-fiber-473419-e6-abf91b637595.json")
-                     service = build_drive_client(Path(sa_json))
-                     
-                     temp_dir = Path("pipeline_output/videos")
-                     temp_dir.mkdir(parents=True, exist_ok=True)
-                     
-                     local_path = temp_dir / asset.original_name
-                     logger.info(f"Downloading {asset.storage_key} to {local_path}...")
-                     
-                     download_video(service, asset.storage_key, local_path)
-                     video_path = local_path.resolve()
-                     logger.success(f"Download complete: {video_path}")
-                     
-                 except Exception as e:
-                     error_msg = f"Failed to download asset from GDrive: {e}"
-                     logger.error(error_msg)
-                     PublishingRunService.update_run_status(session, run_id, "FAILED", error_msg)
-                     return {"status": "failed", "error": error_msg}
+            # 3. Prepare arguments for workflow (V1 JIT Materialization)
+            from agent.services.asset_materializer import materialized_scope
+            
+            # Wrap execution in materializer scope to ensure cleanup
+            with materialized_scope(session, run_id) as materializer:
+                try:
+                    # Materialize asset to host, get container path
+                    # This handles S3 download / RDS Blob stream
+                    video_container_path_str = materializer.materialize_asset(asset.id)
+                    video_path = Path(video_container_path_str)
+                    
+                    logger.info(f"[JOB] Asset materialized at {video_path} (Container path)")
+                    
+                except Exception as e:
+                    error_msg = f"Failed to materialize asset: {e}"
+                    logger.exception(error_msg)
+                    PublishingRunService.update_run_status(session, run_id, "FAILED", error_msg)
+                    return {"status": "failed", "error": error_msg}
 
+                # Indent subsequent logic or structure to fall within scope?
+                # Actually, the materializer needs to keep the file until upload is done.
+                # So the REST of the function (step 4) must be inside this block.
+                # This suggests I should wrap the ENTIRE step 4 in this block.
+                # To minimize diff noise, I will start the block here and indent the rest in a subsequent step?
+                # Or I can just start the block here and assume the user (me) will indent the rest?
+                # No, I must provide valid python.
+                
+                # RE-STRATEGY:
+                # The execute_run method is long. Indenting everything is risky/messy in one go.
+                # I'll use a try/finally block structure explicit in the modification where I can.
+                # But since I can't easily indent 200 lines, I might need to refactor or be careful.
+                
+                # Alternative: `materializer = AssetMaterializer(session, run_id)` 
+                # then `materializer.materialize...`
+                # then `try: ... finally: materializer.cleanup()`.
+                # This avoids massive indentation changes.
+                
+                pass # placeholder to keep syntax valid if I cut the block here
+                
+            # WAIT. If I use context manager `with`, I MUST indent everything.
+            # If I use manual cleanup, I verify I call cleanup.
+            # `PublishingJob` captures exception broadly at line 388 (outer try).
+            # The `execute_run` has a `finally` block at 391.
+            # I can instantiate materializer at start, use it, and call cleanup in `finally`.
+            
+            materializer = None
+            try:
+                # Initialize materializer
+                from agent.services.asset_materializer import AssetMaterializer
+                materializer = AssetMaterializer(session, run_id)
+                
+                # Materialize
+                video_container_path_str = materializer.materialize_asset(asset.id)
+                video_path = Path(video_container_path_str)
+                logger.info(f"[JOB] Asset materialized at {video_path}")
+                
+                # Proceed to Step 4...
+                # (The code following this block continues naturally)
+                
+            except Exception as e:
+                 # If materialization itself fails (before main try-catch catches it?)
+                 # The outer try catch will handle it.
+                 raise e 
+                 
+            # Wait, I am replacing lines 68-92 (GDrive logic).
+            # I need `video_path` to be available below.
+            # And I need `materializer.cleanup()` to be called at the end of `execute_run`.
+            
+            # I can add `if materializer: materializer.cleanup()` to the `finally` block of `execute_run` (Lines 391+).
+            # And insert the materialization logic here.
+            
+            # Let's do that.
+            
+            # REPLACEMENT CONTENT for lines 68-92:
+            
+            # Import overhead
+            from agent.services.asset_materializer import AssetMaterializer
+            
+            # Materialize
+            # We store materializer in self or local var? 
+            # Local var `materializer` is fine, but needs to be accessible in finally?
+            # Assign to `self.materializer`? No, instance is shared? 
+            # `PublishingJob` is instantiated once in main? Yes `job = PublishingJob()`.
+            # So `self.materializer` is risky if concurrency (though distinct run_ids).
+            # But `__init__` doesn't have it.
+            
+            # I will use a local variable `materializer` effectively.
+            # But I need to ensure cleanup.
+            # I will use a nested `try...finally` block AROUND the workflow execution if possible.
+            # OR just update the function's main `finally` block to cleanup specific paths if they exist?
+            # But `AssetMaterializer` encapsulates the path logic.
+            
+            # Let's go with:
+            # 1. Instantiate materializer here.
+            # 2. Add an inner `try...finally` starting HERE, spanning to end of function? 
+            # That requires massive replace.
+            
+            # BETTER OPTION:
+            # Use `run_cycle_single`? No that calls the upload.
+            
+            # OPTION C: Context Manager with indentation...
+            # The tool `replace_file_content` replaces a contiguous block. 
+            # I can't indent the bottom 200 lines without replacing them.
+            # That's too big.
+            
+            # OPTION D: `materializer.cleanup()` explicitly before every `return`?
+            # There are multiple returns (lines 50, 61, 92, 327, 333, 360, 386, 390).
+            # Error prone.
+            
+            # OPTION E: Modify `execute_run` to call a helper `_execute_workflow`?
+            # Refactor `execute_run` to:
+            # setup materializer
+            # try:
+            #    _execute_workflow(...)
+            # finally:
+            #    materializer.cleanup()
+            
+            # That is a big refactor.
+            
+            # OPTION F (Pragmatic):
+            # Manually instantiate `AssetMaterializer`.
+            # Add `materializer = None` at top of `execute_run` (or before step 3).
+            # Update the MAIN `finally` block (lines 391) to generic cleanup.
+            # "if 'materializer' in locals() and materializer: materializer.cleanup()"
+            
+            # This is safe and minimizes diffs.
+            
+            
+            # Replacement for GDrive block:
+            
             platform_key = platform.code.lower()
             captions = {}
+            
+            # Prepare Materializer
+            from agent.services.asset_materializer import AssetMaterializer
+            materializer = AssetMaterializer(session, run_id)
+            
+            try:
+                video_path_str = materializer.materialize_asset(asset.id)
+                video_path = Path(video_container_path_str)
+            except Exception as e:
+                 error_msg = f"Materialization failed: {e}"
+                 logger.error(error_msg)
+                 PublishingRunService.update_run_status(session, run_id, "FAILED", error_msg)
+                 return {"status": "failed", "error": error_msg}
             
             # Map content to platform-specific format
             if platform_key in ("tiktok", "instagram"):
@@ -389,6 +505,8 @@ class PublishingJob:
             logger.exception(f"[JOB] System error in post {run_id}")
             return {"status": "system_error", "error": str(e)}
         finally:
+            if 'materializer' in locals() and materializer:
+                materializer.cleanup()
             session.close()
 
     def process_pending_runs(self, limit: int = 5) -> Dict[str, int]:
