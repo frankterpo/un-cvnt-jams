@@ -1,7 +1,7 @@
 # Core dependencies
 pydantic>=2.0
-eval-type-backport
 loguru
+
 
 # Selenium for browser automation (YouTube, Instagram)
 selenium

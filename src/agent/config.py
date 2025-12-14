@@ -55,13 +55,13 @@ class GoLoginConfig(BaseModel):
 class Settings(BaseModel):
     """Global settings for the social agent."""
 
-    tiktok: TikTokConfig | None = None
-    youtube: YouTubeConfig | None = None
-    instagram: InstagramConfig | None = None
+    tiktok: Optional[TikTokConfig] = None
+    youtube: Optional[YouTubeConfig] = None
+    instagram: Optional[InstagramConfig] = None
     gologin_accounts: Dict[str, GoLoginConfig] = {}  # email -> config
     max_novnc_concurrent_sessions: int = 5
 
-    def get_gologin_credentials(self, account_name: str) -> tuple[str, str] | None:
+    def get_gologin_credentials(self, account_name: str) -> Optional[tuple[str, str]]:
         """
         Find (token, profile_id) for a named social account.
         Returns None if not configured.

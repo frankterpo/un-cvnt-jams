@@ -32,7 +32,7 @@ CMD_ID=$(aws ssm send-command \
     \"echo '[DEPLOY] Cloning repo as ec2-user...'\",
     \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; git clone --depth 1 $REPO_URL $APP_DIR'\",
     \"echo '[DEPLOY] Setting up venv and deps...'\",
-    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; python3 -m venv venv; source venv/bin/activate; pip install -U pip; pip install -r requirements.txt'\",
+    \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; python3 -m venv venv; source venv/bin/activate; pip install -U pip; pip install -r requirements.txt; pip list; echo PIP INSTALL SUCCESS'\",
     \"echo '[DEPLOY] Configuring .env...'\",
     \"sudo -u ec2-user -H bash -lc 'set -euo pipefail; cd $APP_DIR; (grep -q \\\"^NOVNC_IMAGE_URI=\\\" .env 2>/dev/null && sed -i \\\"s|^NOVNC_IMAGE_URI=.*|NOVNC_IMAGE_URI=novnc-lite:latest|\\\" .env) || echo \\\"NOVNC_IMAGE_URI=novnc-lite:latest\\\" >> .env'\",
     \"echo '[DEPLOY] Building novnc-lite Docker image...'\",
