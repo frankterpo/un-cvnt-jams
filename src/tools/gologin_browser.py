@@ -4,13 +4,48 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from gologin import GoLogin
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GoLoginBrowserError(Exception):
     """GoLogin-specific errors."""
     pass
 
+class GoLoginProfileValidator:
+    """Ensures profile fingerprinting consistency per anti-detect best practices."""
+    
+    @staticmethod
+    def validate_profile_settings(profile_data: dict, account_name: str = "Unknown") -> bool:
+        """Validate that profile settings prevent fingerprinting detection."""
+        # Minimal Check for critical fields
+        required_fields = ['os', 'geolocation', 'timezone']
+        
+        for field in required_fields:
+            if field not in profile_data:
+                logger.warning(f"Profile for {account_name} missing '{field}' - Risk of detection")
+                return False
+        
+        # Ensure proxy is explicitly set (even if 'none', it must be defined)
+        if not profile_data.get('proxy'):
+             logger.warning(f"Profile for {account_name} has no proxy config")
+             
+        return True
+
+    @staticmethod
+    def detect_fingerprinting_risk(session_info: dict) -> list[str]:
+        """Analyze session for potential fingerprinting risks."""
+        risks = []
+        # Example checks based on session/profile data
+        if session_info.get('os') == 'win' and 'Macintosh' in session_info.get('navigator', {}).get('userAgent', ''):
+             risks.append("OS mismatch: Windows profile using Mac UserAgent")
+             
+        # Check timezone consistency if available in session info (often it's in profile data, not session return)
+        
+        return risks
+
 class GoLoginBrowserManager:
-    """Manages GoLogin browser sessions for social media automation."""
+    """Manages GoLogin browser sessions."""
     
     def __init__(self, token: str):
         self.token = token
@@ -57,6 +92,22 @@ class GoLoginBrowserManager:
             
             ws_url = gl.start()
             self.last_launch_time = time.time()
+            
+            # Create session info
+            session_info = {
+                'ws_url': ws_url,
+                'profile_id': profile_id,
+                # 'profile_data': profile_data # If we fetched it
+            }
+            
+            # Validate Session Risks
+            # Note: gl.start() returns just URL. We don't have full profile data unless we fetch it.
+            # For efficiency we might skip fetch unless paranoid.
+            # But let's check what we can.
+            
+            # risks = GoLoginProfileValidator.detect_fingerprinting_risk(session_info)
+            # if risks:
+            #     logger.warning(f"Fingerprinting risks detected for {profile_id}: {risks}")
             
             # We need to keep reference to 'gl' object to stop it later?
             # Yes, gl.stop() is needed.

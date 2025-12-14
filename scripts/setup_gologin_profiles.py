@@ -1,254 +1,254 @@
 #!/usr/bin/env python3
-"""Set up and configure GoLogin profiles for social media automation."""
+"""
+Setup GoLogin profiles for each account with consistent anti-detect fingerprints.
+One profile per account (handling all platforms).
+"""
 
-import asyncio
-import json
-import sys
 import os
+import sys
+import json
+import requests
 from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from dotenv import load_dotenv
 
-# Load env vars first
+# Add src to path
+sys.path.append(os.path.join(os.getcwd(), "src"))
+from gologin import GoLogin
+
 load_dotenv()
 
-from tools.gologin_browser import GoLoginBrowserManager
+# Configuration Constants
+ACCOUNTS_FILE = Path("accounts.json")
+GOLOGIN_TOKEN_1 = os.getenv("GOLOGIN_TOKEN_1")
+GOLOGIN_TOKEN_2 = os.getenv("GOLOGIN_TOKEN_2") # For splitting if needed
 
-# Account-to-profile mapping
-ACCOUNT_MAPPING = {
-    "viixenviices": {
-        "gologin_token_env": "GOLOGIN_TOKEN_1",
-        "profile_name": "sugggarrrayyy@gmail.com", # Updated to match username as requested
-        "platforms": ["instagram", "tiktok"],
-        "username": "sugggarrrayyy@gmail.com"
+# Anti-Detect Config Defaults
+BASE_FINGERPRINT = {
+    "os": "lin", # Linux provides good obscure fingerprint
+    "navigator": {
+        "language": "en-US,en",
+        "hardwareConcurrency": 8,
+        "deviceMemory": 8,
+        "maxTouchPoints": 0
     },
-    "popmessparis": {
-        "gologin_token_env": "GOLOGIN_TOKEN_1",
-        "profile_name": "sugggarrrayyy+1@gmail.com",
-        "platforms": ["instagram"],
-        "username": "sugggarrrayyy+1@gmail.com"
+    "webrtc": {
+        "mode": "disabled", # Prevent IP leaks
+        "enabled": False
     },
-    "halohavok": {
-        "gologin_token_env": "GOLOGIN_TOKEN_1",
-        "profile_name": "sugggarrrayyy+2@gmail.com",
-        "platforms": ["instagram"],
-        "username": "sugggarrrayyy+2@gmail.com"
+    "canvas": {
+        "mode": "noise" # Add noise to canvas readout
     },
-    "cigsntofu": {
-        "gologin_token_env": "GOLOGIN_TOKEN_2",
-        "profile_name": "sugggarrrayyy+3@gmail.com",
-        "platforms": ["instagram"],
-        "username": "sugggarrrayyy+3@gmail.com"
+    "fonts": {
+        "families": ["Arial", "Helvetica", "Times New Roman", "Courier New", "Verdana"]
     },
-    "lavenderliqour": {
-        "gologin_token_env": "GOLOGIN_TOKEN_2",
-        "profile_name": "sugggarrrayyy+4@gmail.com",
-        "platforms": ["instagram"],
-        "username": "sugggarrrayyy+4@gmail.com"
-    },
-    "hotcaviarx": {
-        "gologin_token_env": "GOLOGIN_TOKEN_2",
-        "profile_name": "sugggarrrayyy+5@gmail.com",
-        "platforms": ["instagram"],
-        "username": "sugggarrrayyy+5@gmail.com"
+    "proxy": {
+        "mode": "none" 
     }
 }
 
-import requests
+# Specific geo-locations to mimic "real" distributed users across US
+GEO_LOCATIONS = [
+    {"lat": 40.7128, "lon": -74.0060, "timezone": "America/New_York"},      # NY
+    {"lat": 34.0522, "lon": -118.2437, "timezone": "America/Los_Angeles"},  # LA
+    {"lat": 41.8781, "lon": -87.6298, "timezone": "America/Chicago"},       # Chicago
+    {"lat": 29.7604, "lon": -95.3698, "timezone": "America/Chicago"},       # Houston
+    {"lat": 33.4484, "lon": -112.0740, "timezone": "America/Phoenix"},      # Phoenix
+    {"lat": 39.9526, "lon": -75.1652, "timezone": "America/New_York"},      # Philadelphia
+]
 
-async def create_and_setup_profile(account_name: str, config: dict, assigned_profiles: set):
-    """Create or reuse a GoLogin profile for a social account."""
-    print(f"\n🔧 Setting up {account_name}...")
+def load_accounts():
+    if not ACCOUNTS_FILE.exists():
+        print(f"Error: {ACCOUNTS_FILE} not found.")
+        return []
+    with open(ACCOUNTS_FILE) as f:
+        data = json.load(f)
+        return data.get("accounts", [])
+
+def get_token_for_index(idx, total):
+    # Split accounts between two tokens if available
+    # Assuming user has split accounts roughly evenly or wants to
+    if GOLOGIN_TOKEN_2 and idx >= 3:
+        return GOLOGIN_TOKEN_2
+    return GOLOGIN_TOKEN_1
+
+def generate_fingerprint_config(account_name, idx):
+    """Generate a consistent unique fingerprint for an account."""
+    config = BASE_FINGERPRINT.copy()
     
-    token = os.getenv(config['gologin_token_env'])
-    if not token:
-        print(f"  ❌ Missing {config['gologin_token_env']} in environment")
-        return None
-        
-    manager = GoLoginBrowserManager(token)
+    # Assign specific location based on index
+    geo = GEO_LOCATIONS[idx % len(GEO_LOCATIONS)]
     
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
+    config["name"] = account_name # Set profile name
+    
+    config["geolocation"] = {
+        "mode": "allow",
+        "fillBasedOnIp": False, 
+        "latitude": geo["lat"],
+        "longitude": geo["lon"],
+        "accuracy": 100
     }
     
-    profile_id = None
+    config["timezone"] = {
+        "enabled": True,
+        "fillBasedOnIp": False,
+        "timezone": geo["timezone"]
+    }
     
-    try:
-        # Check existing profiles via API 
-        resp = requests.get('https://api.gologin.com/browser/v2', headers=headers)
-        if resp.status_code == 200:
-            profiles = resp.json().get('profiles', [])
-            if isinstance(resp.json(), list):
-                profiles = resp.json()
-            elif isinstance(resp.json(), dict) and 'browsers' in resp.json():
-                 profiles = resp.json()['browsers']
-            
-            # 1. Try to find by name
-            existing_profile = next((p for p in profiles if p.get('name') == config['profile_name']), None)
-            
-            if existing_profile:
-                profile_id = existing_profile['id']
-                print(f"  ✅ Found existing profile '{config['profile_name']}' (ID: {profile_id})")
-                
-                # Ensure proxy is set to none for existing profile too
-                try:
-                    requests.patch(
-                        f"https://api.gologin.com/browser/v2/profiles/{profile_id}",
-                        json={'proxy': {'mode': 'none'}},
-                        headers=headers
-                    )
-                except:
-                    pass
+    # Deep copy nested dicts to avoid mutation if we were reusing base directly
+    # But copy() is shallow. Re-defining navigator usually safer or deepcopy.
+    # For now, simplistic approach.
+    
+    return config
 
-            else:
-                # 2. Reuse an available profile that hasn't been assigned yet
-                # We filter out profiles that are already assigned to other accounts we just processed
-                # AND exclude profiles that already have one of our target names (to avoid stealing from a later account)
+def setup_profiles():
+    accounts = load_accounts()
+    if not accounts:
+        return
+
+    print(f"Found {len(accounts)} accounts. Configuring GoLogin profiles...")
+    
+    env_lines = []
+    
+    assigned_ids = set() # Track IDs we've touched to avoid double-reuse
+    
+    for i, account in enumerate(accounts):
+        label = account["label"]
+        # Use email as key identifier for "Profile Name" to keep it distinct
+        # Or should we use label? User snippet used label in ACCOUNT_PROFILES keys, 
+        # but profile_name="viixenviices_full_account".
+        # Let's use label as profile name for clarity in GoLogin UI.
+        profile_name = label
+        
+        token = get_token_for_index(i, len(accounts))
+        if not token:
+            print(f"Skipping {label}: No token available.")
+            continue
+            
+        gl = GoLogin({
+            "token": token,
+            "port": 3500 + i
+        })
+            
+        # Headers for API
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        target_id = None
+        
+        # 1. List Profiles to find match or reusable
+        try:
+            resp = requests.get("https://api.gologin.com/browser/v2/profiles?limit=50", headers=headers)
+            if resp.status_code == 200:
+                profiles = resp.json().get("profiles", [])
                 
-                target_names = {c['profile_name'] for c in ACCOUNT_MAPPING.values()}
+                # A. Try exact name match (label or email)
+                email_target = account["platforms"]["instagram"]["username"]
                 
-                available = []
                 for p in profiles:
-                    pid = p['id']
-                    pname = p.get('name')
-                    # If this profile is already assigned in this run, skip
-                    if pid in assigned_profiles:
-                        continue
-                    # If this profile is named as one of our OTHER target accounts, skip (it's reserved for them)
-                    if pname in target_names and pname != config['profile_name']:
-                        continue
-                        
-                    available.append(p)
-                
-                if available:
-                    reused_profile = available[0]
-                    profile_id = reused_profile['id']
-                    old_name = reused_profile.get('name', 'Unknown')
-                    print(f"  ♻️  Reusing existing profile '{old_name}' (ID: {profile_id})")
-                    
-                    # Rename and update proxy
-                    update_data = {
-                        'name': config['profile_name'],
-                        'proxy': {'mode': 'none'}
-                    }
-                    try:
-                        # Try POST to update (sometimes POST is used for updates in these APIs)
-                        # Or try v1 if v2 failed. 
-                        # Try v1 endpoint which is often just /browser/{id} or /browser/v1/profiles/{id}
-                        # The error 404 on v2 suggests it doesn't exist there.
-                        # Common GoLogin endpoint for update is PATCH https://api.gologin.com/browser/{id}
-                        
-                        patch_resp = requests.patch(
-                            f"https://api.gologin.com/browser/{profile_id}",
-                            json=update_data,
-                            headers=headers
-                        )
-                        
-                        if patch_resp.status_code != 200:
-                             # Try POST to /browser/{id}
-                             patch_resp = requests.post(
-                                f"https://api.gologin.com/browser/{profile_id}",
-                                json=update_data,
-                                headers=headers
-                            )
+                    p_name = p.get("name")
+                    p_id = p.get("id")
+                    if p_name == profile_name or p_name == email_target:
+                        target_id = p_id
+                        print(f"[{label}] Found existing profile: {target_id} (Name: {p_name})")
+                        break
+                # B. Reuse unused profile if no match
+                if not target_id:
+                   # Find one that isn't in our list of 'assigned' OR 'known names'
+                   all_labels = {a['label'] for a in accounts}
+                   
+                   for p in profiles:
+                       pid = p.get("id")
+                       pname = p.get("name")
+                       if pid not in assigned_ids and pname not in all_labels:
+                           target_id = pid
+                           print(f"[{label}] Reusing profile: {target_id} ({pname})")
+                           break
+                           
+        except Exception as e:
+            print(f"Error listing: {e}")
 
-                        if patch_resp.status_code == 200:
-                             print(f"     -> Renamed to '{config['profile_name']}' and disabled proxy")
-                        else:
-                             print(f"     -> ⚠️ Update failed: {patch_resp.status_code} {patch_resp.text}")
-                    except Exception as e:
-                        print(f"     -> ⚠️ Update exception: {e}")
-                    
-                else:
-                    # 3. Create new if possible (likely fails if limit reached)
-                    profile_data = {
-                        'name': config['profile_name'],
-                        'os': 'lin',
-                        'navigator': {
-                            'userAgent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-                            'resolution': '1280x800',
-                            'language': 'en-US,en',
-                            'platform': 'Linux x86_64'
-                        },
-                        'proxy': {'mode': 'none'}, 
-                        'notes': f'Profile for {account_name} - {config["username"]}'
-                    }
-                    
-                    try:
-                        res = manager.gologin.create(profile_data)
-                        if isinstance(res, str):
-                            profile_id = res
-                        elif isinstance(res, dict):
-                            profile_id = res.get('id')
-                        print(f"  🆕 Created profile '{config['profile_name']}' (ID: {profile_id})")
-                    except Exception as e:
-                         print(f"  ❌ Failed to create profile (Limit reached?): {e}")
-                         return None
+        # Fallback: Check if we already have this profile in env
+        if not target_id:
+             env_var_name = f"GOLOGIN_PROFILE_{label.upper()}"
+             existing_env_id = os.getenv(env_var_name)
+             if existing_env_id:
+                 print(f"[{label}] Recovered ID from env: {existing_env_id}")
+                 target_id = existing_env_id
+        
+        # 2. Config Data
+        fp_config = generate_fingerprint_config(profile_name, i)
+        
+        # Prepare payload usually used for creation
+        # For updates we patch specific fields
+        
+        if target_id:
+             # Update
+             print(f"[{label}] Updating fingerprint...")
+             update_data = {
+                 "name": profile_name,
+                 "os": fp_config["os"],
+                 "geolocation": fp_config["geolocation"],
+                 "timezone": fp_config["timezone"],
+                 "proxy": {"mode": "none"} 
+             }
+             
+             # Patch
+             try:
+                 # PATCH /browser/v2/profiles/{id}
+                 # Some docs say /browser/{id}
+                 r = requests.patch(f"https://api.gologin.com/browser/v2/profiles/{target_id}", json=update_data, headers=headers)
+                 if r.status_code != 200:
+                     # Fallback POST rename/update
+                     requests.post(f"https://api.gologin.com/browser/{target_id}/rename", json={"name": profile_name}, headers=headers)
+             except Exception as e:
+                 print(f"Update failed: {e}")
+                 
+             assigned_ids.add(target_id)
+             
         else:
-             print(f"  ⚠️ Could not list profiles: {resp.status_code} {resp.text}")
-             return None
-        
-        if profile_id:
-            assigned_profiles.add(profile_id)
-            print(f"  ✅ Profile '{config['profile_name']}' (ID: {profile_id}) is ready.")
-            print(f"  📝 Manual steps for {account_name}:")
-            for platform in config['platforms']:
-                if platform == 'instagram':
-                    print(f"        • Instagram: {config['username']}")
-                elif platform == 'tiktok':
-                    print(f"        • TikTok: {config['username']} (with TT suffix)")
-                elif platform == 'youtube':
-                    print(f"        • YouTube Studio: Login required")
-            
-            print(f"     4. Close browser to save session")
-            print(f"     5. Add to .env: GOLOGIN_PROFILE_{account_name.upper()}={profile_id}")
-            
-            return profile_id
-        
-        return None
-        
-    except Exception as e:
-        print(f"  ❌ Failed to setup {account_name}: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+            # Create
+            print(f"[{label}] Creating new profile...")
+            # Fallback to direct API call because SDK gl.create is failing on fingerprint fetch
+            # We strictly define all fields so we don't rely on auto-fetch
+            try:
+                 # Ensure we have all mandatory fields for creation
+                 # GoLogin API usually requires 'os' and 'navigator' at minimum
+                 
+                 create_payload = fp_config.copy()
+                 create_payload.update({
+                     "name": profile_name,
+                     "os": "lin",
+                     "navigator": {
+                        "language": "en-US,en",
+                        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", # Hardcoded valid UA
+                        "resolution": "1920x1080",
+                        "platform": "Linux x86_64",
+                        "hardwareConcurrency": 8,
+                        "deviceMemory": 8,
+                        "maxTouchPoints": 0
+                     }
+                 })
+                 
+                 # POST v2
+                 r = requests.post("https://api.gologin.com/browser/v2/profiles", json=create_payload, headers=headers)
+                 if r.status_code == 200:
+                     target_id = r.json().get("id")
+                     print(f"[{label}] Created: {target_id}")
+                     assigned_ids.add(target_id)
+                 else:
+                     print(f"[{label}] Creation failed: {r.status_code} {r.text}")
+            except Exception as e:
+                print(f"Creation error: {e}")
 
-async def main():
-    """Set up all GoLogin profiles."""
-    print("🚀 GoLogin Profile Setup for Social Media Automation")
-    print("=" * 60)
-    
-    results = {}
-    assigned_profiles = set()
-    
-    for account_name, config in ACCOUNT_MAPPING.items():
-        profile_id = await create_and_setup_profile(account_name, config, assigned_profiles)
-        if profile_id:
-            results[account_name] = profile_id
-    
-    print("\n" + "=" * 60)
-    print("📋 SUMMARY")
-    print("=" * 60)
-    
-    if results:
-        print("✅ Successfully configured profiles:")
-        for account, profile_id in results.items():
-            env_var = f"GOLOGIN_PROFILE_{account.upper()}"
-            print(f"   {account}: {profile_id} → ${env_var}")
-        
-        print("\n📝 Add these to your .env file:")
-        print("   # ... (Ensure tokens are set) ...")
-        
-        for account, profile_id in results.items():
-            env_var = f"GOLOGIN_PROFILE_{account.upper()}"
-            print(f"   {env_var}={profile_id}")
-    
-    else:
-        print("❌ No profiles were successfully configured")
+        if target_id:
+            env_var = f"GOLOGIN_PROFILE_{label.upper()}"
+            env_lines.append(f"{env_var}={target_id}")
+
+    print("\n--- Environment Variables ---")
+    for line in env_lines:
+        print(line)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    setup_profiles()
