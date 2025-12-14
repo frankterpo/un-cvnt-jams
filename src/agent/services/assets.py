@@ -6,44 +6,39 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
 
-from agent.db.models import UploadedAsset
+from agent.db.models import Asset
 
 class AssetService:
-    """Service for managing uploaded assets."""
+    """Service for managing assets (Modernized for Schema v2)."""
 
     @staticmethod
-    def create_uploaded_asset(
+    def create_asset(
         session: Session,
         *,
-        account_id: int,
+        user_id: int,
+        campaign_id: Optional[int] = None,
         storage_key: str,
-        original_filename: str,
+        original_name: str,
         mime_type: Optional[str] = None,
         size_bytes: Optional[int] = None,
-        uploaded_by_first_name: Optional[str] = None,
-        uploaded_by_last_name: Optional[str] = None,
-        uploaded_by_email: Optional[str] = None,
         checksum: Optional[str] = None,
         duration_ms: Optional[int] = None,
         width: Optional[int] = None,
         height: Optional[int] = None,
-        metadata_json: Optional[dict] = None,
-    ) -> UploadedAsset:
-        """Create a new uploaded asset record."""
-        asset = UploadedAsset(
-            account_id=account_id,
+    ) -> Asset:
+        """Create a new asset record."""
+        asset = Asset(
+            user_id=user_id,
+            campaign_id=campaign_id,
             storage_key=storage_key,
-            original_filename=original_filename,
+            original_name=original_name,
             mime_type=mime_type,
             size_bytes=size_bytes,
-            uploaded_by_first_name=uploaded_by_first_name,
-            uploaded_by_last_name=uploaded_by_last_name,
-            uploaded_by_email=uploaded_by_email,
             checksum=checksum,
             duration_ms=duration_ms,
             width=width,
             height=height,
-            metadata_json=metadata_json,
+            status="pending"
         )
         session.add(asset)
         session.commit()
@@ -51,38 +46,32 @@ class AssetService:
         return asset
 
     @staticmethod
-    def list_assets_for_account(
+    def list_assets_for_campaign(
         session: Session,
-        account_id: int,
+        campaign_id: int,
         status: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[UploadedAsset]:
-        """List assets for an account, ordered by most recent upload."""
-        query = select(UploadedAsset).where(
-            UploadedAsset.account_id == account_id,
-            UploadedAsset.deleted_at.is_(None)
+    ) -> List[Asset]:
+        """List assets for a campaign, ordered by most recent upload."""
+        query = select(Asset).where(
+            Asset.campaign_id == campaign_id,
+            Asset.deleted_at.is_(None)
         )
         
         if status:
-            query = query.where(UploadedAsset.status == status)
+            query = query.where(Asset.status == status)
             
-        query = query.order_by(desc(UploadedAsset.uploaded_at)).limit(limit).offset(offset)
+        query = query.order_by(desc(Asset.uploaded_at)).limit(limit).offset(offset)
         return list(session.execute(query).scalars().all())
 
     @staticmethod
     def get_asset_by_id(
         session: Session,
         asset_id: int,
-        account_id: int,
-    ) -> Optional[UploadedAsset]:
-        """Get a specific asset by ID, ensuring it belongs to the account."""
-        query = select(UploadedAsset).where(
-            UploadedAsset.id == asset_id,
-            UploadedAsset.account_id == account_id,
-            UploadedAsset.deleted_at.is_(None)
-        )
-        return session.execute(query).scalar_one_or_none()
+    ) -> Optional[Asset]:
+        """Get a specific asset by ID."""
+        return session.get(Asset, asset_id)
 
     @staticmethod
     def update_asset_status(
@@ -91,7 +80,7 @@ class AssetService:
         status: str,
     ) -> bool:
         """Update the status of an asset."""
-        asset = session.get(UploadedAsset, asset_id)
+        asset = session.get(Asset, asset_id)
         if not asset:
             return False
             
@@ -103,13 +92,14 @@ class AssetService:
     def soft_delete_asset(
         session: Session,
         asset_id: int,
-        account_id: int,
+        deleted_by_user_id: Optional[int] = None,
     ) -> bool:
         """Soft delete an asset."""
-        asset = AssetService.get_asset_by_id(session, asset_id, account_id)
+        asset = session.get(Asset, asset_id)
         if not asset:
             return False
             
         asset.deleted_at = datetime.utcnow()
+        asset.deleted_by_user_id = deleted_by_user_id
         session.commit()
         return True

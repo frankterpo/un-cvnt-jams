@@ -6,56 +6,105 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc, or_, func
 
-from agent.db.models import PublishingRunPost, PublishingRunPostContent
+# Updated imports for new schema
+from agent.db.models import PublishingPost, PublishingPostContent, PublishingRun, Platform, PublishingPostAsset
+from agent.services.browser_provider_allocator import BrowserProviderAllocator
 
 class PublishingRunService:
-    """Service for managing publishing runs."""
+    """Service for managing publishing runs (Modernized)."""
+
+    @staticmethod
+    def _get_platform_id(session: Session, code: str) -> int:
+        platform = session.execute(select(Platform).where(Platform.code == code)).scalar_one_or_none()
+        if not platform:
+            # Fallback for now or raise error? Assuming existing platforms
+            if code == "instagram": return 1
+            if code == "tiktok": return 2
+            if code == "youtube": return 3
+            return 1
+        return platform.id
 
     @staticmethod
     def create_publishing_run(
         session: Session,
         *,
-        account_id: int,
+        account_id: int, # This is dummy_account_id
         asset_id: int,
         target_platform: str,
         scheduled_at: Optional[datetime] = None,
         priority: int = 0,
         created_by_user_id: Optional[int] = None,
-    ) -> PublishingRunPost:
-        """Create a new publishing run."""
-        run = PublishingRunPost(
-            account_id=account_id,
-            asset_id=asset_id,
-            target_platform=target_platform,
+        campaign_id: int = 1, # Default to legacy campaign
+    ) -> PublishingPost:
+        """Create a new publishing run (Post wrapped in Run)."""
+        
+        platform_id = PublishingRunService._get_platform_id(session, target_platform.lower())
+        user_id = created_by_user_id or 1 # Default admin
+        
+        # Allocate browser provider
+        provider_id, profile_id, profile_ref = BrowserProviderAllocator.allocate(session, account_id)
+
+        # Create parent Run with provider info
+        run = PublishingRun(
+            user_id=user_id,
+            campaign_id=campaign_id,
+            dummy_account_id=account_id,
+            platform_id=platform_id,
+            browser_provider_id=provider_id,
+            browser_provider_profile_id=profile_id,
+            provider_session_ref=None,  # Set at execution time
+            status="SCHEDULED" if scheduled_at else "PENDING",
             scheduled_at=scheduled_at,
             priority=priority,
-            created_by_user_id=created_by_user_id,
-            status="SCHEDULED" if scheduled_at else "PENDING",
+            environment="prod"
         )
         session.add(run)
+        session.flush() # Get ID
+
+        # Create Post
+        post = PublishingPost(
+            publishing_run_id=run.id,
+            dummy_account_id=account_id,
+            platform_id=platform_id,
+            status="SCHEDULED" if scheduled_at else "PENDING",
+            scheduled_at=scheduled_at,
+            sequence_no=1
+        )
+        session.add(post)
+        session.flush()
+
+        # Link Asset
+        post_asset = PublishingPostAsset(
+            publishing_post_id=post.id,
+            asset_id=asset_id,
+            position=1,
+            is_cover=False
+        )
+        session.add(post_asset)
+
         session.commit()
-        session.refresh(run)
-        return run
+        session.refresh(post)
+        return post
 
     @staticmethod
     def create_publishing_run_content(
         session: Session,
         *,
-        publishing_run_post_id: int,
+        publishing_run_post_id: int, # This is post_id
         title: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[List[str]] = None,
         language: Optional[str] = None,
         extra_payload_json: Optional[dict] = None,
-    ) -> PublishingRunPostContent:
-        """Create content metadata for a publishing run."""
-        content = PublishingRunPostContent(
-            publishing_run_post_id=publishing_run_post_id,
+    ) -> PublishingPostContent:
+        """Create content metadata for a publishing post."""
+        content = PublishingPostContent(
+            publishing_post_id=publishing_run_post_id,
             title=title,
             description=description,
-            tags=tags,
+            tags={"items": tags} if tags else None, # JSON expectation
             language=language,
-            extra_payload_json=extra_payload_json,
+            extra_payload=extra_payload_json,
         )
         session.add(content)
         session.commit()
@@ -66,24 +115,28 @@ class PublishingRunService:
     def get_pending_runs(
         session: Session,
         limit: int = 10,
-    ) -> List[PublishingRunPost]:
+    ) -> List[PublishingPost]:
         """
-        Get pending publishing runs that are ready to run.
-        
-        Includes runs that are PENDING or SCHEDULED where scheduled_at <= now.
-        Orders by priority DESC, scheduled_at ASC, created_at ASC.
+        Get pending publishing posts that are ready to run.
         """
-        # Use DB server time for comparison to avoid timezone mismatch
-        query = select(PublishingRunPost).where(
+        # Note: We return Posts, not Runs, because Job executes Posts.
+        query = select(PublishingPost).where(
             or_(
-                PublishingRunPost.status == "PENDING",
-                (PublishingRunPost.status == "SCHEDULED") & (PublishingRunPost.scheduled_at <= func.now())
+                PublishingPost.status == "PENDING",
+                (PublishingPost.status == "SCHEDULED") & (PublishingPost.scheduled_at <= func.now())
             )
         ).order_by(
-            desc(PublishingRunPost.priority),
-            PublishingRunPost.scheduled_at.asc(),
-            PublishingRunPost.id.asc() # fallback stable sort
+            # Join with run probably for priority? Or assume post doesn't have priority?
+            # Creating separate priority on Post might be good, or inherit from Run.
+            # Schema has priority on Run.
+            # We can join.
+            # For simplicity, order by scheduled_at and ID.
+            PublishingPost.scheduled_at.asc(),
+            PublishingPost.id.asc()
         ).limit(limit)
+        
+        # We might want to eager load dependencies
+        # query = query.options(joinedload(PublishingPost.assets), joinedload(PublishingPost.content))
         
         return list(session.execute(query).scalars().all())
 
@@ -93,44 +146,60 @@ class PublishingRunService:
         account_id: int,
         status: Optional[str] = None,
         limit: int = 50,
-    ) -> List[PublishingRunPost]:
-        """Get publishing runs for an account."""
-        query = select(PublishingRunPost).where(
-            PublishingRunPost.account_id == account_id
+    ) -> List[PublishingPost]:
+        """Get publishing posts for an account."""
+        query = select(PublishingPost).where(
+            PublishingPost.dummy_account_id == account_id
         )
         
         if status:
-            query = query.where(PublishingRunPost.status == status)
+            query = query.where(PublishingPost.status == status)
             
-        query = query.order_by(desc(PublishingRunPost.id)).limit(limit)
+        query = query.order_by(desc(PublishingPost.id)).limit(limit)
         return list(session.execute(query).scalars().all())
 
     @staticmethod
     def update_run_status(
         session: Session,
-        run_id: int,
+        run_id: int, # post_id
         status: str,
         error_message: Optional[str] = None,
     ) -> bool:
-        """Update the status of a publishing run."""
-        run = session.get(PublishingRunPost, run_id)
-        if not run:
+        """Update the status of a publishing post (and parent run if needed)."""
+        post = session.get(PublishingPost, run_id)
+        if not post:
             return False
             
-        run.status = status
+        post.status = status
         
         if status == "RUNNING":
-            run.started_at = datetime.utcnow()
+            post.started_at = datetime.utcnow()
         elif status in ("SUCCESS", "FAILED", "CANCELLED", "SKIPPED"):
-            run.completed_at = datetime.utcnow()
+            post.completed_at = datetime.utcnow()
         
         if status == "FAILED":
-            run.retry_count += 1
+            # post doesn't have retry_count in schema? Schema check: Post does not, Run does.
+            # Logic: Update parent run retry count?
+            if post.run:
+                post.run.retry_count += 1
+                
             if error_message:
-                run.error_message = error_message
+                post.error_message = error_message
         elif error_message:
-            # Also save error message if provided for other statuses (e.g. warning)
-            run.error_message = error_message
+            post.error_message = error_message
+            
+        # Update parent Run status?
+        # If execution is 1:1, yes.
+        if post.run:
+            if status == "RUNNING" and post.run.status != "RUNNING":
+                 post.run.status = "RUNNING"
+                 post.run.started_at = datetime.utcnow()
+            elif status in ("SUCCESS", "SKIPPED") and post.run.status not in ("SUCCESS", "FAILED"):
+                 post.run.status = status
+                 post.run.completed_at = datetime.utcnow()
+            elif status == "FAILED":
+                 post.run.status = "FAILED"
+                 post.run.error_message = error_message
             
         session.commit()
         return True

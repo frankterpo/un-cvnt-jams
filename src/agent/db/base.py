@@ -6,8 +6,12 @@ import os
 from datetime import datetime
 from typing import Any
 
+from dotenv import load_dotenv
 from sqlalchemy import DateTime, MetaData, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+# Load environment variables
+load_dotenv()
 
 class Base(DeclarativeBase):
     """Shared base for all models."""

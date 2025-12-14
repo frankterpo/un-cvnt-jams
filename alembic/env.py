@@ -26,7 +26,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set the SQLAlchemy URL from our app config
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# We must escape % to %% to prevent ConfigParser interpolation errors
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -63,13 +64,10 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
-
-    with connectable.connect() as connection:
+    # Use the shared engine from base.py which has SSL/Pooling configured
+    from agent.db.base import engine
+    
+    with engine.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
