@@ -20,6 +20,8 @@ CMD_ID=$(aws ssm send-command \
   --timeout-seconds 3600 \
   --parameters "commands=[
     \"set -euo pipefail\",
+    \"echo '[DEPLOY] Setting up swap...'\",
+    \"if ! swapon -s | grep -q /swapfile; then sudo dd if=/dev/zero of=/swapfile bs=1M count=2048; sudo chmod 600 /swapfile; sudo mkswap /swapfile; sudo swapon /swapfile; fi\",
     \"echo '[DEPLOY] whoami:' && whoami && id\",
     \"echo '[DEPLOY] Stopping worker...'\",
     \"sudo systemctl stop publishing-worker || true\",
