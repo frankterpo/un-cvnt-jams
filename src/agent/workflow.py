@@ -10,10 +10,12 @@ from loguru import logger
 
 from agent.config import Settings
 from agent.state import UploadState
-from tools.tiktok_client import TikTokClient
-from tools.youtube_client import YouTubeClient
-from tools.youtube_metadata import YouTubeMetadata
-from tools.instagram_client import InstagramClient
+# Lazy loaded in methods:
+# from tools.tiktok_client import TikTokClient
+# from tools.youtube_client import YouTubeClient
+# from tools.youtube_metadata import YouTubeMetadata
+# from tools.instagram_client import InstagramClient
+
 from tools.gologin_selenium import SyncGoLoginWebDriver
 
 
@@ -87,6 +89,8 @@ def _publish_tiktok(
     driver_ctx = None if driver else _get_driver_context(settings, account_name, gologin_token, gologin_profile_id, "TIKTOK")
 
     try:
+        from tools.tiktok_client import TikTokClient
+        
         if driver:
             client = TikTokClient(settings.tiktok)
             client.upload_single(item.path, caption, driver=driver)
@@ -125,12 +129,17 @@ def _publish_youtube(
         logger.info("[YOUTUBE] No metadata for {}, skipping", item.id)
         return {"status": "skipped", "reason": "missing_metadata"}
 
+    from tools.youtube_client import YouTubeClient
+    from tools.youtube_metadata import YouTubeMetadata
+
     meta = YouTubeMetadata(
         title=ydata["title"],
         description=ydata["description"],
         tags=ydata.get("tags", []),
         publish_at=_parse_publish_at(ydata.get("publish_at")),
     )
+
+
     
     driver_ctx = None if driver else _get_driver_context(settings, account_name, gologin_token, gologin_profile_id, "YOUTUBE")
 
@@ -176,6 +185,8 @@ def _publish_instagram(
     driver_ctx = None if driver else _get_driver_context(settings, account_name, gologin_token, gologin_profile_id, "INSTAGRAM")
 
     try:
+        from tools.instagram_client import InstagramClient
+        
         if driver:
             client = InstagramClient(settings.instagram)
             client.upload(item.path, caption, post_type="feed", driver=driver)
