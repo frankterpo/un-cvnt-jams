@@ -196,7 +196,7 @@ class TikTokClient:
                 proxy=proxy,
                 browser_agent=driver,
                 headless=self.config.headless,
-                num_retries=2,
+                num_retries=0,
                 on_complete=_on_complete,
                 comment=allow_comments,
                 duet=allow_duet,
@@ -251,7 +251,7 @@ class TikTokClient:
                 proxy=proxy,
                 browser_agent=driver,
                 headless=self.config.headless,
-                num_retries=2,
+                num_retries=0,
                 on_complete=_on_complete,
                 skip_split_window=True,
             )
@@ -275,4 +275,3 @@ class TikTokClient:
                 driver.quit()
             except Exception:
                 pass
-

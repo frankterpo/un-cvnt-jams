@@ -36,6 +36,16 @@ def main() -> None:
     parser.add_argument("--profile-dir", type=Path, required=True, help="Path to Chrome profile directory")
     parser.add_argument("--post-type", type=str, default="feed", choices=["feed", "reel"], help="Post type")
     parser.add_argument("--headless", action="store_true", help="Override headless to True")
+    parser.add_argument("--run-id", type=str, default=None, help="Run identifier for artifact folder naming")
+    parser.add_argument("--debug-dir", type=Path, default=None, help="Directory to write run artifacts")
+    parser.add_argument("--interactive-login", action="store_true", help="Enable HITL login via CDP+screencast")
+    parser.add_argument(
+        "--interactive-timeout-secs",
+        type=int,
+        default=None,
+        help="Max seconds to wait for HITL login before failing",
+    )
+    parser.add_argument("--cdp-port", type=int, default=None, help="CDP port for DevTools screencast")
 
     args = parser.parse_args()
 
@@ -56,18 +66,38 @@ def main() -> None:
         settings.instagram.profile_dir = profile_dir
         if args.headless:
             settings.instagram.headless = True
+        if args.run_id:
+            settings.instagram.run_id = args.run_id
+        if args.debug_dir:
+            settings.instagram.debug_dir = args.debug_dir
+        if args.interactive_login:
+            settings.instagram.interactive_login = True
+        if args.interactive_timeout_secs is not None:
+            settings.instagram.interactive_timeout_secs = args.interactive_timeout_secs
+        if args.cdp_port is not None:
+            settings.instagram.cdp_port = args.cdp_port
     else:
         # Create new config if not in settings
         settings.instagram = InstagramConfig(
             profile_dir=profile_dir,
             headless=args.headless,
+            run_id=args.run_id,
+            debug_dir=args.debug_dir,
+            interactive_login=args.interactive_login,
+            interactive_timeout_secs=args.interactive_timeout_secs or 900,
+            cdp_port=args.cdp_port or 9222,
         )
 
     logger.info(
-        "[INSTAGRAM] Resolved config: profile_dir={}, headless={}, base_url={}",
+        "[INSTAGRAM] Resolved config: profile_dir={}, headless={}, base_url={}, run_id={}, debug_dir={}, interactive_login={}, interactive_timeout_secs={}, cdp_port={}",
         settings.instagram.profile_dir,
         settings.instagram.headless,
         settings.instagram.base_url,
+        settings.instagram.run_id,
+        settings.instagram.debug_dir,
+        settings.instagram.interactive_login,
+        settings.instagram.interactive_timeout_secs,
+        settings.instagram.cdp_port,
     )
 
     # Upload
@@ -86,4 +116,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

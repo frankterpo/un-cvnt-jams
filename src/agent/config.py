@@ -39,8 +39,13 @@ class InstagramConfig(BaseModel):
 
     profile_dir: Path
     base_url: str = "https://www.instagram.com"
-    headless: bool = True
+    headless: bool = False
     upload_timeout_seconds: int = 180
+    run_id: str | None = None
+    debug_dir: Path | None = None
+    interactive_login: bool = False
+    interactive_timeout_secs: int = 900
+    cdp_port: int = 9222
 
 
 class GoLoginConfig(BaseModel):
@@ -78,6 +83,18 @@ def _env_path(name: str) -> Path:
         raise RuntimeError(f"Missing required env var: {name}")
     return Path(value).expanduser().resolve()
 
+def _env_optional_path(name: str) -> Path | None:
+    value = os.environ.get(name)
+    if not value:
+        return None
+    return Path(value).expanduser().resolve()
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() == "true"
+
 
 def load_settings() -> Settings:
     """Build Settings from environment variables (.env for local dev)."""
@@ -96,7 +113,12 @@ def load_settings() -> Settings:
         instagram = InstagramConfig(
             profile_dir=_env_path("INSTAGRAM_PROFILE_DIR"),
             base_url=os.getenv("INSTAGRAM_BASE_URL", "https://www.instagram.com"),
-            headless=os.getenv("INSTAGRAM_HEADLESS", "true").lower() == "true",
+            headless=_env_bool("INSTAGRAM_HEADLESS", default=False),
+            run_id=os.getenv("IG_RUN_ID"),
+            debug_dir=_env_optional_path("IG_DEBUG_DIR"),
+            interactive_login=_env_bool("IG_INTERACTIVE_LOGIN", default=False),
+            interactive_timeout_secs=int(os.getenv("IG_INTERACTIVE_TIMEOUT_SECS", "900")),
+            cdp_port=int(os.getenv("IG_CDP_PORT", "9222")),
         )
 
         # Load GoLogin accounts
